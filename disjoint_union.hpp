@@ -34,6 +34,11 @@ template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
 template<typename F, typename ...Ts, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> std::true_type callable_with_test(int);
 template<typename ...> std::false_type callable_with_test(...);
 struct unexpected_case;
+template<typename, typename> struct unfold_impl_1;
+template<typename, typename> struct unfold_impl_2;
+struct _ {};
+bool operator==(_, _);
+bool operator<(_, _);
 
 // aliases
 template<typename T> using equality_comparable = decltype(here::equality_comparable_test<T>(0));
@@ -46,11 +51,12 @@ template<typename F, typename ...Ts> using callable_with = decltype(here::callab
 // disjoint_union
 template<typename ...Ts>
 class disjoint_union {
-    using fallback_tag = typename find_fallback_type<0, Ts...>::type;
+    template<typename T> using unfold = typename here::unfold_impl_1<disjoint_union, T>::type;
+    using fallback_tag = typename find_fallback_type<0, unfold<Ts>...>::type;
     static constexpr std::size_t elements_size = sizeof...(Ts);
     static constexpr bool enable_fallback = fallback_tag::value != elements_size;
     static constexpr std::size_t backup_mask = ~(~(std::size_t)0 >> 1);
-    template<std::size_t I> using element = at<I, Ts...>;
+    template<std::size_t I> using element = at<I, unfold<Ts>...>;
     template<std::size_t I> using unwrap_element = typename unwrap<element<I>>::type;
 
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
@@ -354,8 +360,8 @@ private:
 
     std::size_t which_;
     typename std::conditional<enable_fallback,
-        aligned_union_t<0, Ts...>,
-        aligned_union_t<0, Ts..., void*>>::type storage_;
+        aligned_union_t<0, unfold<Ts>...>,
+        aligned_union_t<0, unfold<Ts>..., void*>>::type storage_;
 };
 
 // visitor_table
@@ -405,6 +411,14 @@ struct find_fallback_type<I, T, Ts...>
     : std::conditional<std::is_nothrow_default_constructible<T>::value,
                        tag_t<I>,
                        find_fallback_type<I+1, Ts...>>::type
+{};
+// Specialization for recursive types. Escape default constructibility inspection of recursive<T>.
+// Because `std::is_nothrow_default_constructible` may inspect default construtibility of `U` in instaciation of `U`,
+// where `U` is a `disjoint_union<...>` contains `_`.
+// `recursive` allocates memory in any constructor. So this check may escape.
+template<std::size_t I, typename T, typename ...Ts>
+struct find_fallback_type<I, recursive<T>, Ts...>
+    : find_fallback_type<I+1, Ts...>
 {};
 
 // all
@@ -504,6 +518,42 @@ auto fix(F f) {
         };
 }
 
+// unfold_impl_1
+template<typename Self, typename T>
+struct unfold_impl_1 {
+    using result = typename unfold_impl_2<Self, T>::type;
+    static constexpr bool has_placeholder = !std::is_same<T, result>::value;
+    using type = typename std::conditional<has_placeholder, recursive<result>, T>::type;
+};
+template<typename Self, typename T>
+struct unfold_impl_1<Self, recursive<T>>
+    : std::common_type<recursive<typename unfold_impl_2<Self, T>::type>>
+{};
+
+// unfold_impl_2
+template<typename Self, typename T>
+struct unfold_impl_2
+    : std::common_type<T>
+{};
+template<typename Self>
+struct unfold_impl_2<Self, _>
+    : std::common_type<Self>
+{};
+template<typename Self, typename ...Ts>
+struct unfold_impl_2<Self, disjoint_union<Ts...>>
+    : std::common_type<disjoint_union<Ts...>>
+{};
+template<typename Self, template<typename ...> class Tmpl, typename ...Ts>
+struct unfold_impl_2<Self, Tmpl<Ts...>>
+    : std::common_type<Tmpl<typename unfold_impl_2<Self, Ts>::type...>>
+{};
+
+// u<int, _>
+// u<int, rec<u<int, _>>>
+
+// u<std::tuple<int, _, _>, x>
+// u<rec<std::tuple<int, u<std::tuple<int, _, _>, u<std::tuple<int, _, _>>>, x>
+
 #undef DESALT_DISJOINT_UNION_REQUIRE
 #undef DESALT_DISJOINT_VALID_EXPR
 
@@ -514,6 +564,7 @@ using detail::tag_t;
 using detail::recursive;
 using detail::tie;
 using detail::fix;
+using detail::_;
 constexpr tag_t<0> _0{};
 constexpr tag_t<1> _1{};
 constexpr tag_t<2> _2{};

@@ -12,6 +12,7 @@ using desalt::disjoint_union::recursive;
 using desalt::disjoint_union::tag_t;
 using desalt::disjoint_union::tie;
 using desalt::disjoint_union::fix;
+using desalt::disjoint_union::_;
 
 struct hoge {
     hoge(int x) : x(x) {}
@@ -141,5 +142,42 @@ int main() {
                 return n.x + n.l.when(f) + n.r.when(f);
             }));
         assert(n.x + n.l.when(g) + n.r.when(g) == 15);
+    }
+    {
+        struct leaf {};
+        using node = disjoint_union<leaf, std::tuple<int, _, _>>;
+        auto make_leaf = [] () { return node(_0, leaf{}); };
+        auto make_node = [] (int v, node l, node r) {
+                return node(_1, std::make_tuple(v, std::move(l), std::move(r)));
+            };
+        auto n = make_node(1,
+                           make_leaf(),
+                           make_node(2,
+                                     make_node(3,
+                                               make_leaf(),
+                                               make_leaf()),
+                                     make_node(4,
+                                               make_node(5,
+                                                         make_leaf(),
+                                                         make_leaf()),
+                                               make_leaf())));
+        auto g = ::fix(::tie(
+            [] (auto, tag_t<0>, leaf) {
+                return 0;
+            }, [] (auto f, tag_t<1>, std::tuple<int, node, node> const & tup) -> int {
+                return std::get<0>(tup) + std::get<1>(tup).when(f) + std::get<2>(tup).when(f);
+            }));
+        assert(n.when(g) == 15);
+    }
+    {
+        using u1 = disjoint_union<int, _>;
+        using u2 = disjoint_union<_, u1, char>;
+        u2 x = u2(_1, u1(_1, u1(_0, 42)));
+        assert(x.get(_1).get(_1).get(_0) == 42);
+    }
+    {
+        using u = disjoint_union<std::tuple<_>, char>;
+        u x(_1, 'a');
+        x == x;
     }
 }
