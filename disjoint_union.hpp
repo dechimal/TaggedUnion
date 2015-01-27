@@ -1,12 +1,13 @@
 #include <type_traits>
 #include <utility>
 #include <stdexcept>
+#include <tuple>
 
-namespace desalt {
+namespace desalt { namespace disjoint_union {
 
-namespace detail { namespace disjoint_union {
+namespace detail {
 
-namespace here = disjoint_union;
+namespace here = detail;
 
 #define DESALT_DISJOINT_UNION_REQUIRE(...) typename = typename std::enable_if<(__VA_ARGS__)>::type
 #define DESALT_DISJOINT_UNION_VALID_EXPR(...) typename = decltype((__VA_ARGS__), (void)0)
@@ -21,12 +22,24 @@ template<std::size_t, typename ...> union aligned_union_t;
 template<typename ...> union aligned_union_impl;
 constexpr bool all();
 template<typename T, typename ...Ts> constexpr bool all(T, Ts...);
-template<typename T, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() == std::declval<T>())> std::true_type equality_comparable(int);
-template<typename> std::false_type equality_comparable(...);
-template<typename T, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() < std::declval<T>())> std::true_type less_than_comparable(int);
-template<typename> std::false_type less_than_comparable(...);
-template<std::size_t, typename ...> struct at;
+template<typename T, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() == std::declval<T>())> std::true_type equality_comparable_test(int);
+template<typename> std::false_type equality_comparable_test(...);
+template<typename T, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() < std::declval<T>())> std::true_type less_comparable_test(int);
+template<typename> std::false_type less_comparable_test(...);
+template<std::size_t, typename ...> struct at_impl;
+template<typename> struct recursive;
+template<typename> struct unwrap;
+template<typename ...Fs> struct tie_t;
+template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
+template<typename F, typename ...Ts, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> std::true_type callable_with_test(int);
+template<typename ...> std::false_type callable_with_test(...);
+struct unexpected_case;
 
+// aliases
+template<typename T> using equality_comparable = decltype(here::equality_comparable_test<T>(0));
+template<typename T> using less_comparable = decltype(here::less_comparable_test<T>(0));
+template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
+template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
 
 // implementations
 
@@ -34,25 +47,26 @@ template<std::size_t, typename ...> struct at;
 template<typename ...Ts>
 class disjoint_union {
     using fallback_tag = typename find_fallback_type<0, Ts...>::type;
-    static constexpr std::size_t element_size = sizeof...(Ts);
-    static constexpr bool enable_fallback = fallback_tag::value != element_size;
+    static constexpr std::size_t elements_size = sizeof...(Ts);
+    static constexpr bool enable_fallback = fallback_tag::value != elements_size;
     static constexpr std::size_t backup_mask = ~(~(std::size_t)0 >> 1);
-    template<std::size_t I> using element = typename here::at<I, Ts...>::type;
+    template<std::size_t I> using element = at<I, Ts...>;
+    template<std::size_t I> using unwrap_element = typename unwrap<element<I>>::type;
 
-    static_assert(((element_size + enable_fallback) & backup_mask) == 0, "too many elements.");
+    static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
 
 public:
     template<std::size_t I, typename ...Args,
-             DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
+             DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<unwrap_element<I>, Args &&...>::value)>
     disjoint_union(tag_t<I> t, Args && ...args) : which_(t.value) {
         this->construct(t, std::forward<Args>(args)...);
     }
     template<std::size_t I>
-    disjoint_union(tag_t<I> t, element<I> const & x) : which_(t.value) {
+    disjoint_union(tag_t<I> t, unwrap_element<I> const & x) : which_(t.value) {
         this->construct(t, x);
     }
     template<std::size_t I>
-    disjoint_union(tag_t<I> t, element<I> && x) : which_(t.value) {
+    disjoint_union(tag_t<I> t, unwrap_element<I> && x) : which_(t.value) {
         this->construct(t, std::move(x));
     }
     disjoint_union(disjoint_union const & other) : which_(other.which_) {
@@ -73,7 +87,7 @@ public:
         } else {
             if (other.nothrow_copy_constructible()) {
                 this->destroy();
-                other.copy_construct_to(&storage_);
+                other.copy_construct_to(&this->storage_);
             } else if (other.nothrow_move_constructible()) {
                 other.dispatch([&] (auto t) {
                         element<t.value> tmp(other.get_unchecked(t));
@@ -107,7 +121,7 @@ public:
         } else {
             if (other.nothrow_move_constructible()) {
                 this->destroy();
-                other.move_construct_to(&storage_);
+                other.move_construct_to(&this->storage_);
             } else if (this->nothrow_move_constructible()) {
                 this->dispatch([&] (auto t) {
                         element<t.value> tmp(std::move(this->get_unchecked(t)));
@@ -127,28 +141,35 @@ public:
         return *this;
     }
 
-    template<std::size_t I> element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
-    template<std::size_t I> element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
-    template<std::size_t I> element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
-    template<std::size_t I> element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
-    template<std::size_t I> element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
-    template<std::size_t I> element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
-    template<std::size_t I> element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
-    template<std::size_t I> element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> unwrap_element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
+    template<std::size_t I> unwrap_element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
+    template<std::size_t I> unwrap_element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
+    template<std::size_t I> unwrap_element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
+    template<std::size_t I> unwrap_element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
+    template<std::size_t I> unwrap_element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
+    template<std::size_t I> unwrap_element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> unwrap_element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
 
     std::size_t which() const {
         return which_ & ~backup_mask;
     }
 
     template<typename F>
-    auto match(F f) -> decltype(auto) {
+    auto dispatch(F f) const -> decltype(auto) {
+        // using iseq = std::index_sequence_for<Ts...>;
+        // return here::visitor_table<F, iseq>::table[which()](f);
+        return here::visitor_table<F, std::index_sequence_for<Ts...>>::table[which()](f);
+    }
+
+    template<typename F>
+    auto when(F f) const -> decltype(auto) {
         return this->dispatch([&] (auto t) {
-                return f(t.value, get_unchecked(t));
+                return f(t, this->get_unchecked(t));
             });
     }
 
     friend bool operator==(disjoint_union const & a, disjoint_union const & b) {
-        static_assert(here::all(decltype(here::equality_comparable<Ts>(0))::value...), "each element type must be equality comparable.");
+        static_assert(here::all(equality_comparable<Ts>::value...), "each element type must be equality comparable.");
         if (a.which() != b.which()) return false;
         return a.dispatch([&] (auto t) {
                 return a.get_unchecked(t) == b.get_unchecked(t);
@@ -158,7 +179,7 @@ public:
         return !(a == b);
     }
     friend bool operator<(disjoint_union const & a, disjoint_union const & b) {
-        static_assert(here::all(decltype(here::less_than_comparable<Ts>(0))::value...), "each element type must be less than comparable.");
+        static_assert(here::all(less_comparable<Ts>::value...), "each element type must be less than comparable.");
         if (a.which() != b.which()) return a.which() < b.which();
         return a.dispatch([&] (auto t) {
                 return a.get_unchecked(t) < b.get_unchecked(t);
@@ -177,33 +198,33 @@ public:
 private:
     template<std::size_t I>
     element<I> & get_impl(tag_t<I> t) {
-        if (t.value == which()) return get_unchecked(t);
-        else throw std::invalid_argument("bad index.");
+        if (t.value == which()) return get_unchecked_impl(t);
+        else throw std::invalid_argument("bad tag.");
     }
     template<std::size_t I>
     element<I> const & get_impl(tag_t<I> t) const {
-        if (t.value == which()) return get_unchecked(t);
-        else throw std::invalid_argument("bad index.");
+        if (t.value == which()) return get_unchecked_impl(t);
+        else throw std::invalid_argument("bad tag.");
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
     element<I> & get_unchecked_impl(tag_t<I> t) {
-        static_assert(t.value < element_size, "index is too large.");
+        static_assert(t.value < elements_size, "tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
     element<I> & get_unchecked_impl(tag_t<I> t) {
-        static_assert(t.value < element_size, "index is too large.");
+        static_assert(t.value < elements_size, "tag is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
     element<I> const & get_unchecked_impl(tag_t<I> t) const {
-        static_assert(t.value < element_size, "index is too large.");
+        static_assert(t.value < elements_size, "tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
     element<I> const & get_unchecked_impl(tag_t<I> t) const {
-        static_assert(t.value < element_size, "index is too large.");
+        static_assert(t.value < elements_size, "tag is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
@@ -222,13 +243,6 @@ private:
     template<typename Tag, typename T = element<Tag::value>, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond)>
     T const & get_backup(Tag) const {
         return **reinterpret_cast<T * const *>(&storage_);
-    }
-
-    template<typename F>
-    auto dispatch(F f) const -> decltype(auto) {
-        // using iseq = std::index_sequence_for<Ts...>;
-        // return here::visitor_table<F, iseq>::table[which()](f);
-        return here::visitor_table<F, std::index_sequence_for<Ts...>>::table[which()](f);
     }
 
     bool nothrow_copy_constructible() const {
@@ -272,7 +286,7 @@ private:
     template<bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
     void copy_assign_without_nothrow_guarantee(disjoint_union const & other) {
         this->dispatch([&] (auto t) {
-                auto p = new element<t.value>(this->get_unchecked(t));
+                auto p = new element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
                 try {
                     this->destroy(t);
                     other.copy_construct_to(&this->storage_);
@@ -300,7 +314,7 @@ private:
     template<bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
     void move_assign_without_nothrow_guarantee(disjoint_union && other) {
         this->dispatch([&] (auto t) {
-                auto p = new element<t.value>(std::move(this->get_unchecked(t)));
+                auto p = new element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
                 try {
                     this->destroy(t);
                     other.move_construct_to(&this->storage_);
@@ -377,6 +391,8 @@ template<>
 union aligned_union_impl<> {};
 template<typename T, typename ...Ts>
 union aligned_union_impl<T, Ts...> {
+    aligned_union_impl() {}
+    ~aligned_union_impl() {}
     T head;
     aligned_union_impl<Ts...> tail;
 };
@@ -405,16 +421,99 @@ struct tag_t
 {};
 
 // at
-template<typename T, typename ...Ts> struct at<0, T, Ts...> { using type = T; };
-template<std::size_t I, typename T, typename ...Ts> struct at<I, T, Ts...> : at<I-1, Ts...> {};
+template<typename T, typename ...Ts> struct at_impl<0, T, Ts...> : std::common_type<T> {};
+template<std::size_t I, typename T, typename ...Ts> struct at_impl<I, T, Ts...> : at_impl<I-1, Ts...> {};
+
+// recursive
+template<typename T>
+struct recursive {
+    explicit recursive() : p(new T()) {}
+    explicit recursive(T const & x) : p(new T(x)) {}
+    explicit recursive(T && x) : p(new T(std::move(x))) {}
+    template<typename ...Args, DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<T, Args &&...>::value)>
+    explicit recursive(Args && ...args) : p(new T(std::forward<Args>(args)...)) {}
+    explicit recursive(recursive const & other) : recursive(*other.p) {}
+    explicit recursive(recursive && other) noexcept : p(other.p) {
+        other.p = nullptr;
+    }
+    ~recursive() { delete p; }
+
+    recursive & operator=(recursive const & other) & {
+        *p = *other.p;
+        return *this;
+    }
+    recursive & operator=(recursive && other) & {
+        *p = std::move(*other.p);
+        return *this;
+    }
+    operator T        & ()        & { return *p; }
+    operator T const  & () const  & { return *p; }
+    operator T       && ()       && { return std::move(*p); }
+    operator T const && () const && { return std::move(*p); }
+private:
+    T * p;
+};
+
+// unwrap
+template<typename T> struct unwrap { using type = T; };
+template<typename T> struct unwrap<recursive<T>> { using type = T; };
+
+// tie_t
+template<typename ...Fs>
+struct tie_t {
+    tie_t(Fs ...fs) : fs(std::move(fs)...) {}
+
+    template<bool cond, std::size_t I, typename ...Args>
+    struct find_tag_impl : find_tag_impl<callable_with<at<I, Fs...>, Args...>::value, I+1, Args...> {};
+    template<typename ...Args>
+    struct find_tag_impl<false, sizeof...(Fs), Args...> : tag_t<sizeof...(Fs)> {};
+    template<std::size_t I, typename ...Args>
+    struct find_tag_impl<true, I, Args...> : tag_t<I-1> {};
+
+    template<typename ...Args>
+    using find_tag = typename find_tag_impl<callable_with<at<0, Fs...>, Args...>::value, 1, Args...>::type;
+
+    // `f_i` denotes result of `std::get<i>(fs)`,
+    //  - if `f_i(std::forward<Args>(args)...)` is valid expression, then it calls `f_i`,
+    //  - otherwise this step applies to f_i+1.
+    // This behavior is intent to use as pattern matching in functional programming languages.
+    template<typename ...Args, typename Tag = find_tag<Args && ...>, DESALT_DISJOINT_UNION_REQUIRE(Tag::value != sizeof...(Fs))>
+    auto operator()(Args && ...args) const -> decltype(auto) {
+        return std::get<Tag::value>(fs)(std::forward<Args>(args)...);
+    }
+private:
+    std::tuple<Fs...> fs;
+};
+
+// tie
+template<typename ...Fs>
+tie_t<Fs...> tie(Fs ...fs) {
+    return { std::move(fs)... };
+}
+
+// unexpected_case
+struct unexpected_case : std::logic_error {
+    unexpected_case() : logic_error("unexpected case") {}
+};
+
+// fix
+template<typename F>
+auto fix(F f) {
+    return [f=std::move(f)] (auto && ...args) {
+            return f(here::fix(f), std::forward<decltype(args)>(args)...);
+        };
+}
 
 #undef DESALT_DISJOINT_UNION_REQUIRE
 #undef DESALT_DISJOINT_VALID_EXPR
 
-}} // namespace detail { namespace disjoint_union {
+} // namespace detail {
 
-using detail::disjoint_union::disjoint_union;
-using detail::disjoint_union::tag_t;
+using detail::disjoint_union;
+using detail::tag_t;
+using detail::recursive;
+using detail::tie;
+using detail::fix;
 constexpr tag_t<0> _0{};
 constexpr tag_t<1> _1{};
 constexpr tag_t<2> _2{};
@@ -426,4 +525,4 @@ constexpr tag_t<7> _7{};
 constexpr tag_t<8> _8{};
 constexpr tag_t<9> _9{};
 
-}
+}} // namespace desalt { namespace disjoint_union {

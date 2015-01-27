@@ -3,11 +3,15 @@
 #include <vector>
 #include "disjoint_union.hpp"
 
-using desalt::_0;
-using desalt::_1;
-using desalt::_2;
-using desalt::_3;
-using desalt::disjoint_union;
+using desalt::disjoint_union::_0;
+using desalt::disjoint_union::_1;
+using desalt::disjoint_union::_2;
+using desalt::disjoint_union::_3;
+using desalt::disjoint_union::disjoint_union;
+using desalt::disjoint_union::recursive;
+using desalt::disjoint_union::tag_t;
+using desalt::disjoint_union::tie;
+using desalt::disjoint_union::fix;
 
 struct hoge {
     hoge(int x) : x(x) {}
@@ -107,5 +111,35 @@ int main() {
         assert(std::equal(v1.begin(), v1.end(), v2.begin(), v2.end()));
         auto & v3 = b.get(_1);
         assert(v3.empty());
+    }
+    {
+        struct leaf {};
+        struct node {
+            node(int x, leaf l, leaf r) : x(x), l(_0, l), r(_0, r) {}
+            node(int x, node l, leaf r) : x(x), l(_1, l), r(_0, r) {}
+            node(int x, leaf l, node r) : x(x), l(_0, l), r(_1, r) {}
+            node(int x, node l, node r) : x(x), l(_1, l), r(_1, r) {}
+            int x;
+            disjoint_union<leaf, recursive<node>> l;
+            disjoint_union<leaf, recursive<node>> r;
+        };
+        node n(1,
+               leaf{},
+               node(2,
+                    node(3,
+                         leaf{},
+                         leaf{}),
+                    node(4,
+                         node(5,
+                              leaf{},
+                              leaf{}),
+                         leaf{})));
+        auto g = ::fix(::tie(
+            [] (auto, tag_t<0>, leaf) {
+                return 0;
+            }, [] (auto f, tag_t<1>, node const & n) -> int {
+                return n.x + n.l.when(f) + n.r.when(f);
+            }));
+        assert(n.x + n.l.when(g) + n.r.when(g) == 15);
     }
 }
