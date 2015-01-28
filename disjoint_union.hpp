@@ -35,16 +35,19 @@ template<typename F, typename ...Ts, DESALT_DISJOINT_UNION_VALID_EXPR(std::declv
 template<typename ...> std::false_type callable_with_test(...);
 struct unexpected_case;
 template<typename, typename> struct unfold_impl_1;
-template<typename, typename> struct unfold_impl_2;
-struct _ {};
-bool operator==(_, _);
-bool operator<(_, _);
+template<typename, std::size_t, typename> struct unfold_impl_2;
+template<std::size_t> struct _r;
+template<std::size_t I>
+bool operator==(_r<I>, _r<I>);
+template<std::size_t I>
+bool operator<(_r<I>, _r<I>);
 
 // aliases
 template<typename T> using equality_comparable = decltype(here::equality_comparable_test<T>(0));
 template<typename T> using less_comparable = decltype(here::less_comparable_test<T>(0));
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
+using _ = _r<0>;
 
 // implementations
 
@@ -521,31 +524,31 @@ auto fix(F f) {
 // unfold_impl_1
 template<typename Self, typename T>
 struct unfold_impl_1 {
-    using result = typename unfold_impl_2<Self, T>::type;
+    using result = typename unfold_impl_2<Self, 0, T>::type;
     static constexpr bool has_placeholder = !std::is_same<T, result>::value;
     using type = typename std::conditional<has_placeholder, recursive<result>, T>::type;
 };
 template<typename Self, typename T>
 struct unfold_impl_1<Self, recursive<T>>
-    : std::common_type<recursive<typename unfold_impl_2<Self, T>::type>>
+    : std::common_type<recursive<typename unfold_impl_2<Self, 0, T>::type>>
 {};
 
 // unfold_impl_2
-template<typename Self, typename T>
+template<typename Self, std::size_t I, typename T>
 struct unfold_impl_2
     : std::common_type<T>
 {};
-template<typename Self>
-struct unfold_impl_2<Self, _>
+template<typename Self, std::size_t I>
+struct unfold_impl_2<Self, I, _r<I>>
     : std::common_type<Self>
 {};
-template<typename Self, typename ...Ts>
-struct unfold_impl_2<Self, disjoint_union<Ts...>>
-    : std::common_type<disjoint_union<Ts...>>
+template<typename Self, std::size_t I, typename ...Ts>
+struct unfold_impl_2<Self, I, disjoint_union<Ts...>>
+    : std::common_type<disjoint_union<typename unfold_impl_2<Self, I+1, Ts>::type...>>
 {};
-template<typename Self, template<typename ...> class Tmpl, typename ...Ts>
-struct unfold_impl_2<Self, Tmpl<Ts...>>
-    : std::common_type<Tmpl<typename unfold_impl_2<Self, Ts>::type...>>
+template<typename Self, std::size_t I, template<typename ...> class Tmpl, typename ...Ts>
+struct unfold_impl_2<Self, I, Tmpl<Ts...>>
+    : std::common_type<Tmpl<typename unfold_impl_2<Self, I, Ts>::type...>>
 {};
 
 // u<int, _>
@@ -553,6 +556,12 @@ struct unfold_impl_2<Self, Tmpl<Ts...>>
 
 // u<std::tuple<int, _, _>, x>
 // u<rec<std::tuple<int, u<std::tuple<int, _, _>, u<std::tuple<int, _, _>>>, x>
+
+// _r
+template<std::size_t>
+struct _r {
+    template<typename T = int> _r() { static_assert(!sizeof(T), "_r<I> is recursion placeholder. must not use as value."); }
+};
 
 #undef DESALT_DISJOINT_UNION_REQUIRE
 #undef DESALT_DISJOINT_VALID_EXPR
@@ -565,6 +574,8 @@ using detail::recursive;
 using detail::tie;
 using detail::fix;
 using detail::_;
+using detail::_r;
+
 constexpr tag_t<0> _0{};
 constexpr tag_t<1> _1{};
 constexpr tag_t<2> _2{};

@@ -13,6 +13,7 @@ using desalt::disjoint_union::tag_t;
 using desalt::disjoint_union::tie;
 using desalt::disjoint_union::fix;
 using desalt::disjoint_union::_;
+using desalt::disjoint_union::_r;
 
 struct hoge {
     hoge(int x) : x(x) {}
@@ -42,6 +43,7 @@ struct hoge {
 
 int main() {
     {
+        // construct, assign, exception safety
         disjoint_union<int, double, hoge, hoge> a(_1, 10.0);
         assert(a.get(_1) == 10.0);
         auto b = a;
@@ -70,6 +72,7 @@ int main() {
         }
     }
     {
+        // strong guarantee without fallback type
         disjoint_union<hoge, hoge> a(_0, hoge{42});
         disjoint_union<hoge, hoge> b(_1, hoge{24});
         b.get(_1).b = true;
@@ -81,6 +84,7 @@ int main() {
         }
     }
     {
+        // equality
         disjoint_union<int, hoge> a(_0, 42);
         disjoint_union<int, hoge> b(_1, hoge{42});
         assert(a != b);
@@ -88,6 +92,7 @@ int main() {
         assert(a == b);
     }
     {
+        // strong guarantee without nothrow constructible type
         disjoint_union<hoge, hoge> a(_0, hoge{42});
         disjoint_union<hoge, hoge> b(_1, hoge{42});
         b.get(_1).b = true;
@@ -99,11 +104,13 @@ int main() {
         }
     }
     {
+        // less
         disjoint_union<int, double> a(_0, 42);
         disjoint_union<int, double> b(_1, 10.0);
         assert(a < b);
     }
     {
+        // move
         disjoint_union<int, std::vector<int>> a(_0, 10);
         disjoint_union<int, std::vector<int>> b(_1, {1, 2, 3});
         a = std::move(b);
@@ -114,6 +121,7 @@ int main() {
         assert(v3.empty());
     }
     {
+        // indirect recursion
         struct leaf {};
         struct node {
             node(int x, leaf l, leaf r) : x(x), l(_0, l), r(_0, r) {}
@@ -144,6 +152,7 @@ int main() {
         assert(n.x + n.l.when(g) + n.r.when(g) == 15);
     }
     {
+        // direct recursion
         struct leaf {};
         using node = disjoint_union<leaf, std::tuple<int, _, _>>;
         auto make_leaf = [] () { return node(_0, leaf{}); };
@@ -170,14 +179,32 @@ int main() {
         assert(n.when(g) == 15);
     }
     {
+        // recursion with nest
         using u1 = disjoint_union<int, _>;
         using u2 = disjoint_union<_, u1, char>;
+        static_assert(std::is_same<decltype(std::declval<u1&>().get(_1)), u1&>::value, "failed at recursion type 1");
+        static_assert(std::is_same<decltype(std::declval<u2&>().get(_0)), u2&>::value, "failed at recursion type 2");
         u2 x = u2(_1, u1(_1, u1(_0, 42)));
         assert(x.get(_1).get(_1).get(_0) == 42);
     }
     {
+        // fallback type in recursion type
         using u = disjoint_union<std::tuple<_>, char>;
         u x(_1, 'a');
-        x == x;
+        assert(x == x);
+    }
+    {
+        // recursion with nested and outer placeholder
+        using u = disjoint_union<disjoint_union<_, _r<1>, char>, int>;
+        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), disjoint_union<_, u, char>&>::value, "recursion with nested and outer placeholder 1");
+        static_assert(std::is_same<decltype(std::declval<u&>().get(_0).get(_1)), u&>::value, "recursion with nested and outer placeholder 2");
+        u a(_1, 42);
+        u b(_0, { _0, { _2, 'a' } });
+        u c(_0, { _1, { _1, 42 } });
+        u d(_0, { _2, 'a' });
+        assert(a == c.get(_0).get(_1));
+        assert(b.get(_0).get(_0) == d.get(_0));
+        a = { _0, { _1, d } };
+        assert(a.get(_0).get(_1).get(_0) == b.get(_0).get(_0));
     }
 }
