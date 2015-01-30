@@ -14,6 +14,7 @@ namespace here = detail;
 
 // forward declarations
 template<std::size_t I> struct tag_t;
+template<typename T> struct id;
 template<typename ...> struct disjoint_union;
 template<typename, typename> struct visitor_table;
 template<typename T> inline void destroy(T &);
@@ -22,13 +23,13 @@ template<std::size_t, typename ...> union aligned_union_t;
 template<typename ...> union aligned_union_impl;
 constexpr bool all();
 template<typename T, typename ...Ts> constexpr bool all(T, Ts...);
-template<typename T, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() == std::declval<T>())> std::true_type equality_comparable_test(int);
-template<typename> std::false_type equality_comparable_test(...);
-template<typename T, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() < std::declval<T>())> std::true_type less_comparable_test(int);
-template<typename> std::false_type less_comparable_test(...);
+template<typename T, typename U, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() == std::declval<U>())> std::true_type equality_comparable_test(int);
+template<typename, typename> std::false_type equality_comparable_test(...);
+template<typename T, typename U, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() < std::declval<U>())> std::true_type less_than_comparable_test(int);
+template<typename, typename> std::false_type less_than_comparable_test(...);
 template<std::size_t, typename ...> struct at_impl;
 template<typename> struct recursive;
-template<typename> struct unwrap;
+template<typename> struct unwrap_impl;
 template<typename ...Fs> struct tie_t;
 template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
 template<typename F, typename ...Ts, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> std::true_type callable_with_test(int);
@@ -37,15 +38,20 @@ struct unexpected_case;
 template<typename, typename> struct unfold_impl_1;
 template<typename, std::size_t, typename> struct unfold_impl_2;
 template<std::size_t> struct _r;
-template<std::size_t I>
-bool operator==(_r<I>, _r<I>);
-template<std::size_t I>
-bool operator<(_r<I>, _r<I>);
+template<std::size_t I> bool operator==(_r<I>, _r<I>);
+template<std::size_t I> bool operator<(_r<I>, _r<I>);
+template<typename ...Ts, typename ...Us> bool operator==(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator!=(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator<(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator>(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator<=(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator>=(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
 
 // aliases
-template<typename T> using equality_comparable = decltype(here::equality_comparable_test<T>(0));
-template<typename T> using less_comparable = decltype(here::less_comparable_test<T>(0));
+template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
+template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
+template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
 template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
 using _ = _r<0>;
 
@@ -60,104 +66,69 @@ class disjoint_union {
     static constexpr bool enable_fallback = fallback_tag::value != elements_size;
     static constexpr std::size_t backup_mask = ~(~(std::size_t)0 >> 1);
     template<std::size_t I> using element = at<I, unfold<Ts>...>;
-    template<std::size_t I> using unwrap_element = typename unwrap<element<I>>::type;
+    template<std::size_t I> using unwrapped_element = unwrap<element<I>>;
 
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
 
 public:
+    template<std::size_t I>
+    disjoint_union(tag_t<I> t, unwrapped_element<I> const & x) : which_(t.value) {
+        this->construct_directly(t, x);
+    }
+    template<std::size_t I>
+    disjoint_union(tag_t<I> t, unwrapped_element<I> && x) : which_(t.value) {
+        this->construct_directly(t, std::move(x));
+    }
     template<std::size_t I, typename ...Args,
-             DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<unwrap_element<I>, Args &&...>::value)>
+             DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<unwrapped_element<I>, Args &&...>::value)>
     disjoint_union(tag_t<I> t, Args && ...args) : which_(t.value) {
-        this->construct(t, std::forward<Args>(args)...);
+        this->construct_directly(t, std::forward<Args>(args)...);
     }
-    template<std::size_t I>
-    disjoint_union(tag_t<I> t, unwrap_element<I> const & x) : which_(t.value) {
-        this->construct(t, x);
+    disjoint_union(disjoint_union const & other) : which_(other.which()) {
+        this->construct(other);
     }
-    template<std::size_t I>
-    disjoint_union(tag_t<I> t, unwrap_element<I> && x) : which_(t.value) {
-        this->construct(t, std::move(x));
+    disjoint_union(disjoint_union && other) : which_(other.which()) {
+        this->construct(std::move(other));
     }
-    disjoint_union(disjoint_union const & other) : which_(other.which_) {
-        other.copy_construct_to(&storage_);
+    template<typename ...Us, DESALT_DISJOINT_UNION_REQUIRE(here::all(std::is_constructible<Ts, Us>::value...))>
+    disjoint_union(disjoint_union<Us...> const & other) : which_(other.which()) {
+        this->construct(other);
     }
-    disjoint_union(disjoint_union && other) : which_(other.which_) {
-        other.move_construct_to(&storage_);
+    template<typename ...Us, DESALT_DISJOINT_UNION_REQUIRE(here::all(std::is_constructible<Ts, Us>::value...))>
+    disjoint_union(disjoint_union<Us...> && other) : which_(other.which()) {
+        this->construct(std::move(other));
     }
     ~disjoint_union() {
         destroy();
     }
 
     disjoint_union & operator=(disjoint_union const & other) & {
-        if (which_ == other.which_) {
-            this->dispatch([&] (auto t) {
-                    this->get_unchecked(t) = other.get_unchecked(t);
-                });
-        } else {
-            if (other.nothrow_copy_constructible()) {
-                this->destroy();
-                other.copy_construct_to(&this->storage_);
-            } else if (other.nothrow_move_constructible()) {
-                other.dispatch([&] (auto t) {
-                        element<t.value> tmp(other.get_unchecked(t));
-                        this->destroy();
-                        this->construct(t, std::move(tmp));
-                    });
-            } else if (this->nothrow_move_constructible()) {
-                this->dispatch([&] (auto t) {
-                        element<t.value> tmp(std::move(this->get_unchecked(t)));
-                        this->destroy(t);
-                        try {
-                            other.copy_construct_to(&this->storage_);
-                        } catch (...) {
-                            this->construct(t, std::move(tmp));
-                            throw;
-                        }
-                    });
-            } else {
-                this->copy_assign_without_nothrow_guarantee(other);
-            }
-            this->set_which(other.which());
-        }
+        this->assign(other);
         return *this;
     }
-
     disjoint_union & operator=(disjoint_union && other) & {
-        if (which_ == other.which_) {
-            this->dispatch([&] (auto t) {
-                    this->get_unchecked(t) = std::move(other.get_unchecked(t));
-                });
-        } else {
-            if (other.nothrow_move_constructible()) {
-                this->destroy();
-                other.move_construct_to(&this->storage_);
-            } else if (this->nothrow_move_constructible()) {
-                this->dispatch([&] (auto t) {
-                        element<t.value> tmp(std::move(this->get_unchecked(t)));
-                        this->destroy(t);
-                        try {
-                            other.move_construct_to(&this->storage_);
-                        } catch (...) {
-                            this->construct(t, std::move(tmp));
-                            throw;
-                        }
-                    });
-            } else {
-                this->move_assign_without_nothrow_guarantee(std::move(other));
-            }
-            this->set_which(other.which());
-        }
+        this->assign(std::move(other));
+        return *this;
+    }
+    template<typename ...Us>
+    typename std::enable_if<here::all(std::is_assignable<Ts, Us>::value...), disjoint_union &>::type operator=(disjoint_union<Us...> const & other) & {
+        this->assign(other);
+        return *this;
+    }
+    template<typename ...Us>
+    typename std::enable_if<here::all(std::is_assignable<Ts, Us>::value...), disjoint_union &>::type operator=(disjoint_union<Us...> && other) & {
+        this->assign(std::move(other));
         return *this;
     }
 
-    template<std::size_t I> unwrap_element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
-    template<std::size_t I> unwrap_element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
-    template<std::size_t I> unwrap_element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
-    template<std::size_t I> unwrap_element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
-    template<std::size_t I> unwrap_element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
-    template<std::size_t I> unwrap_element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
-    template<std::size_t I> unwrap_element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
-    template<std::size_t I> unwrap_element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> unwrapped_element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
+    template<std::size_t I> unwrapped_element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
+    template<std::size_t I> unwrapped_element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
+    template<std::size_t I> unwrapped_element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
+    template<std::size_t I> unwrapped_element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
+    template<std::size_t I> unwrapped_element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
+    template<std::size_t I> unwrapped_element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> unwrapped_element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
 
     std::size_t which() const {
         return which_ & ~backup_mask;
@@ -175,33 +146,6 @@ public:
         return this->dispatch([&] (auto t) {
                 return f(t, this->get_unchecked(t));
             });
-    }
-
-    friend bool operator==(disjoint_union const & a, disjoint_union const & b) {
-        static_assert(here::all(equality_comparable<Ts>::value...), "each element type must be equality comparable.");
-        if (a.which() != b.which()) return false;
-        return a.dispatch([&] (auto t) {
-                return a.get_unchecked(t) == b.get_unchecked(t);
-            });
-    }
-    friend bool operator!=(disjoint_union const & a, disjoint_union const & b) {
-        return !(a == b);
-    }
-    friend bool operator<(disjoint_union const & a, disjoint_union const & b) {
-        static_assert(here::all(less_comparable<Ts>::value...), "each element type must be less than comparable.");
-        if (a.which() != b.which()) return a.which() < b.which();
-        return a.dispatch([&] (auto t) {
-                return a.get_unchecked(t) < b.get_unchecked(t);
-            });
-    }
-    friend bool operator>(disjoint_union const & a, disjoint_union const & b) {
-        return b < a;
-    }
-    friend bool operator<=(disjoint_union const & a, disjoint_union const & b) {
-        return !(b < a);
-    }
-    friend bool operator>=(disjoint_union const & a, disjoint_union const & b) {
-        return !(a < b);
     }
 
 private:
@@ -255,78 +199,120 @@ private:
     }
 
     bool nothrow_copy_constructible() const {
-        return this->dispatch([&] (auto t) {
+        return this->dispatch([] (auto t) {
                 return std::is_nothrow_copy_constructible<element<t.value>>::value;
             });
     }
     bool nothrow_move_constructible() const {
-        return this->dispatch([&] (auto t) {
+        return this->dispatch([] (auto t) {
                 return std::is_nothrow_move_constructible<element<t.value>>::value;
             });
     }
-    void copy_construct_to(void * storage_ptr) const {
-        this->dispatch([&] (auto t) {
-                new(storage_ptr) element<t.value>(this->get_unchecked(t));
+    template<typename Union>
+    bool nothrow_constructible(Union && other) const {
+        using value_type = typename std::decay<Union>::type;
+        return other.dispatch([] (auto t) {
+                return std::is_nothrow_constructible<element<t.value>, typename value_type::template element<t.value>&&>::value;
             });
     }
-    void move_construct_to(void * storage_ptr) {
-        this->dispatch([&] (auto t) {
-                new(storage_ptr) element<t.value>(std::move(this->get_unchecked(t)));
+    template<typename Union>
+    void construct(Union && other) {
+        other.dispatch([&] (auto t) {
+                this->construct_directly(t, std::forward<Union>(other).get_unchecked(t));
             });
+    }
+    template<std::size_t I, typename ...Args>
+    void construct_directly(tag_t<I> t, Args && ...args) {
+        new(&storage_) element<t.value>(std::forward<Args>(args)...);
     }
     void destroy() {
         this->dispatch([&] (auto t) {
                 this->destroy(t);
             });
     }
-    template<bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
-    void copy_assign_without_nothrow_guarantee(disjoint_union const & other) {
-        this->dispatch([&] (auto t) {
+
+    template<typename ...Us>
+    void assign(disjoint_union<Us...> const & other) & {
+        if (which_ == other.which_) {
+            this->dispatch([&] (auto t) {
+                    this->get_unchecked(t) = other.get_unchecked(t);
+                });
+        } else {
+            if (this->nothrow_constructible(other)) {
+                this->destroy();
+                this->construct(other);
+            } else if (other.nothrow_move_constructible()) {
+                other.dispatch([&] (auto t) {
+                        using other_element = typename disjoint_union<Us...>::template element<t.value>;
+                        other_element tmp(other.get_unchecked(t));
+                        this->destroy();
+                        this->construct_directly(t, std::move(tmp));
+                    });
+            } else if (this->nothrow_move_constructible()) {
+                this->dispatch([&] (auto t) {
+                        element<t.value> tmp(std::move(this->get_unchecked(t)));
+                        this->destroy(t);
+                        try {
+                            this->construct(other);
+                        } catch (...) {
+                            this->construct_directly(t, std::move(tmp));
+                            throw;
+                        }
+                    });
+            } else {
+                this->assign_without_nothrow_guarantee(other);
+            }
+            this->set_which(other.which());
+        }
+    }
+    template<typename ...Us>
+    void assign(disjoint_union<Us...> && other) & {
+        if (which_ == other.which_) {
+            this->dispatch([&] (auto t) {
+                    this->get_unchecked(t) = std::move(other).get_unchecked(t);
+                });
+        } else {
+            if (this->nothrow_constructible(std::move(other))) {
+                this->destroy();
+                this->construct(std::move(other));
+            } else if (this->nothrow_move_constructible()) {
+                this->dispatch([&] (auto t) {
+                        element<t.value> tmp(std::move(this->get_unchecked(t)));
+                        this->destroy(t);
+                        try {
+                            this->construct(std::move(other));
+                        } catch (...) {
+                            this->construct_directly(t, std::move(tmp));
+                            throw;
+                        }
+                    });
+            } else {
+                this->assign_without_nothrow_guarantee(std::move(other));
+            }
+            this->set_which(other.which());
+        }
+    }
+
+    template<typename Union, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
+    void assign_without_nothrow_guarantee(Union && other) {
+        other.dispatch([&] (auto t) {
                 try {
                     this->destroy(t);
-                    other.copy_construct_to(&this->storage_);
+                    this->construct(std::forward<Union>(other));
                 } catch (...) {
-                    this->construct(fallback_tag{});
+                    this->construct_directly(fallback_tag{});
                     this->set_which(fallback_tag::value);
                     throw;
                 }
             });
     }
-    template<bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
-    void copy_assign_without_nothrow_guarantee(disjoint_union const & other) {
-        this->dispatch([&] (auto t) {
+    template<typename Union, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
+    void assign_without_nothrow_guarantee(Union && other) {
+        other.dispatch([&] (auto t) {
                 auto p = new element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
                 try {
                     this->destroy(t);
-                    other.copy_construct_to(&this->storage_);
-                    delete p;
-                } catch (...) {
-                    *reinterpret_cast<void **>(&this->storage_) = p;
-                    this->mark_as_backup();
-                    throw;
-                }
-            });
-    }
-    template<bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
-    void move_assign_without_nothrow_guarantee(disjoint_union && other) {
-        this->dispatch([&] (auto t) {
-                try {
-                    this->destroy(t);
-                    other.move_construct_to(&this->storage_);
-                } catch (...) {
-                    this->construct(fallback_tag{});
-                    this->set_which(fallback_tag::value);
-                    throw;
-                }
-            });
-    }
-    template<bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
-    void move_assign_without_nothrow_guarantee(disjoint_union && other) {
-        this->dispatch([&] (auto t) {
-                auto p = new element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
-                try {
-                    this->destroy(t);
-                    other.move_construct_to(&this->storage_);
+                    this->construct(std::forward<Union>(other));
                     delete p;
                 } catch (...) {
                     *reinterpret_cast<void **>(&this->storage_) = p;
@@ -345,10 +331,14 @@ private:
         if (backedup()) delete &get_backup(t);
         else here::destroy(get_typed(t));
     }
-    template<typename Tag, typename ...Args>
-    void construct(Tag, Args && ...args) {
-        new(&storage_) element<Tag::value>(std::forward<Args>(args)...);
-    }
+
+    template<typename ...Ts1, typename ...Ts2> friend bool operator==(disjoint_union<Ts1...> const &, disjoint_union<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator!=(disjoint_union<Ts1...> const &, disjoint_union<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator<(disjoint_union<Ts1...> const &, disjoint_union<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator>(disjoint_union<Ts1...> const &, disjoint_union<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator<=(disjoint_union<Ts1...> const &, disjoint_union<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator>=(disjoint_union<Ts1...> const &, disjoint_union<Ts2...> const &);
+
     void set_which(std::size_t which) {
         which_ = which;
     }
@@ -366,6 +356,39 @@ private:
         aligned_union_t<0, unfold<Ts>...>,
         aligned_union_t<0, unfold<Ts>..., void*>>::type storage_;
 };
+
+template<typename ...Ts, typename ...Us>
+bool operator==(disjoint_union<Ts...> const & a, disjoint_union<Us...> const & b) {
+    static_assert(here::all(equality_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be equality comparable.");
+    if (a.which() != b.which()) return false;
+    return a.dispatch([&] (auto t) -> bool {
+            return a.get_unchecked(t) == b.get_unchecked(t);
+        });
+}
+template<typename ...Ts, typename ...Us>
+bool operator!=(disjoint_union<Ts...> const & a, disjoint_union<Us...> const & b) {
+    return !(a == b);
+}
+template<typename ...Ts, typename ...Us>
+bool operator<(disjoint_union<Ts...> const & a, disjoint_union<Us...> const & b) {
+    static_assert(here::all(less_than_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be less than comparable.");
+    if (a.which() != b.which()) return a.which() < b.which();
+    return a.dispatch([&] (auto t) -> bool {
+            return a.get_unchecked(t) < b.get_unchecked(t);
+        });
+}
+template<typename ...Ts, typename ...Us>
+bool operator>(disjoint_union<Ts...> const & a, disjoint_union<Us...> const & b) {
+    return b < a;
+}
+template<typename ...Ts, typename ...Us>
+bool operator<=(disjoint_union<Ts...> const & a, disjoint_union<Us...> const & b) {
+    return !(b < a);
+}
+template<typename ...Ts, typename ...Us>
+bool operator>=(disjoint_union<Ts...> const & a, disjoint_union<Us...> const & b) {
+    return !(a < b);
+}
 
 // visitor_table
 template<typename F, std::size_t ...Is>
@@ -435,10 +458,18 @@ constexpr bool all(T p, Ts ...ps) {
 template<std::size_t I>
 struct tag_t
     : std::integral_constant<std::size_t, I>
-{};
+{
+    using type = tag_t<I>;
+};
+
+// id
+template<typename T>
+struct id {
+    using type = T;
+};
 
 // at
-template<typename T, typename ...Ts> struct at_impl<0, T, Ts...> : std::common_type<T> {};
+template<typename T, typename ...Ts> struct at_impl<0, T, Ts...> : id<T> {};
 template<std::size_t I, typename T, typename ...Ts> struct at_impl<I, T, Ts...> : at_impl<I-1, Ts...> {};
 
 // recursive
@@ -471,9 +502,9 @@ private:
     T * p;
 };
 
-// unwrap
-template<typename T> struct unwrap { using type = T; };
-template<typename T> struct unwrap<recursive<T>> { using type = T; };
+// unwrap_impl
+template<typename T> struct unwrap_impl { using type = T; };
+template<typename T> struct unwrap_impl<recursive<T>> { using type = T; };
 
 // tie_t
 template<typename ...Fs>
@@ -530,26 +561,46 @@ struct unfold_impl_1 {
 };
 template<typename Self, typename T>
 struct unfold_impl_1<Self, recursive<T>>
-    : std::common_type<recursive<typename unfold_impl_2<Self, 0, T>::type>>
+    : id<recursive<typename unfold_impl_2<Self, 0, T>::type>>
 {};
 
 // unfold_impl_2
-template<typename Self, std::size_t I, typename T>
-struct unfold_impl_2
-    : std::common_type<T>
-{};
-template<typename Self, std::size_t I>
-struct unfold_impl_2<Self, I, _r<I>>
-    : std::common_type<Self>
-{};
-template<typename Self, std::size_t I, typename ...Ts>
-struct unfold_impl_2<Self, I, disjoint_union<Ts...>>
-    : std::common_type<disjoint_union<typename unfold_impl_2<Self, I+1, Ts>::type...>>
-{};
-template<typename Self, std::size_t I, template<typename ...> class Tmpl, typename ...Ts>
-struct unfold_impl_2<Self, I, Tmpl<Ts...>>
-    : std::common_type<Tmpl<typename unfold_impl_2<Self, I, Ts>::type...>>
-{};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2 : id<T> {};
+template<typename Self, std::size_t I> struct unfold_impl_2<Self, I, _r<I>> : id<Self> {};
+template<typename Self, std::size_t I, typename ...Ts> struct unfold_impl_2<Self, I, disjoint_union<Ts...>> : id<disjoint_union<typename unfold_impl_2<Self, I+1, Ts>::type...>> {};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2<Self, I, T*> : id<typename unfold_impl_2<Self, I, T>::type*> {};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2<Self, I, T&> : id<typename unfold_impl_2<Self, I, T>::type&> {};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2<Self, I, T&&> : id<typename unfold_impl_2<Self, I, T>::type&&> {};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2<Self, I, T const> : id<typename unfold_impl_2<Self, I, T>::type const> {};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2<Self, I, T volatile> : id<typename unfold_impl_2<Self, I, T>::type volatile> {};
+template<typename Self, std::size_t I, typename T> struct unfold_impl_2<Self, I, T const volatile> : id<typename unfold_impl_2<Self, I, T>::type const volatile> {};
+template<typename Self, std::size_t I, typename T, std::size_t N> struct unfold_impl_2<Self, I, T[N]> : id<typename unfold_impl_2<Self, I, T>::type[N]> {};
+template<typename Self, std::size_t I, template<typename ...> class Tmpl, typename ...Ts> struct unfold_impl_2<Self, I, Tmpl<Ts...>> : id<Tmpl<typename unfold_impl_2<Self, I, Ts>::type...>> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...)> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...)> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) const> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) const> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) volatile> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) volatile> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) const volatile> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) const volatile> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) &> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) &> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) const &> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) const &> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) volatile &> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) volatile &> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) const volatile &> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) const volatile &> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) &&> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) &&> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) const &&> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) const &&> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) volatile &&> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) volatile &&> {};
+template<typename Self, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Self, I, R(Args...) const volatile &&> : id<typename unfold_impl_2<Self, I, R>::type(typename unfold_impl_2<Self, I, Args>::type...) const volatile &&> {};
+template<typename Self, std::size_t I, typename T, typename C> struct unfold_impl_2<Self, I, T (C::*)> : id<typename unfold_impl_2<Self, I, T>::type(unfold_impl_2<Self, I, C>::type::*)> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...)> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...)> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) const> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) const> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) volatile> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) volatile> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) const volatile> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) const volatile> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) &> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) &> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) const &> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) const &> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) volatile &> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) volatile &> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) const volatile &> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) const volatile &> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) &&> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) &&> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) const &&> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) const &&> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) volatile &&> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) volatile &&> {};
+template<typename Self, std::size_t I, typename R, typename C, typename ...Args> struct unfold_impl_2<Self, I, R (C::*)(Args...) const volatile &&> : id<typename unfold_impl_2<Self, I, R>::type(unfold_impl_2<Self, I, C>::type::*)(typename unfold_impl_2<Self, I, Args>::type...) const volatile &&> {};
 
 // u<int, _>
 // u<int, rec<u<int, _>>>

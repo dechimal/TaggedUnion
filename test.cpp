@@ -207,4 +207,16 @@ int main() {
         a = { _0, { _1, d } };
         assert(a.get(_0).get(_1).get(_0) == b.get(_0).get(_0));
     }
+    {
+        // implicit conversions
+        struct unit {
+            bool operator==(unit) const { return true; }
+        };
+        using ilist = disjoint_union<unit, std::tuple<int, _>>;
+        using clist = disjoint_union<unit, std::tuple<char, _>>;
+
+        ilist xs(_1, std::make_tuple(42, ilist(_0)));
+        clist ys(_1, std::make_tuple(42, clist(_0)));
+        assert(xs == ys);
+    }
 }
