@@ -65,22 +65,22 @@ class disjoint_union {
     static constexpr std::size_t elements_size = sizeof...(Ts);
     static constexpr bool enable_fallback = fallback_tag::value != elements_size;
     static constexpr std::size_t backup_mask = ~(~(std::size_t)0 >> 1);
-    template<std::size_t I> using element = at<I, unfold<Ts>...>;
-    template<std::size_t I> using unwrapped_element = unwrap<element<I>>;
+    template<std::size_t I> using actual_element = at<I, unfold<Ts>...>;
+    template<std::size_t I> using element = unwrap<actual_element<I>>;
 
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
 
 public:
     template<std::size_t I>
-    disjoint_union(tag_t<I> t, unwrapped_element<I> const & x) : which_(t.value) {
+    disjoint_union(tag_t<I> t, element<I> const & x) : which_(t.value) {
         this->construct_directly(t, x);
     }
     template<std::size_t I>
-    disjoint_union(tag_t<I> t, unwrapped_element<I> && x) : which_(t.value) {
+    disjoint_union(tag_t<I> t, element<I> && x) : which_(t.value) {
         this->construct_directly(t, std::move(x));
     }
     template<std::size_t I, typename ...Args,
-             DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<unwrapped_element<I>, Args &&...>::value)>
+             DESALT_DISJOINT_UNION_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
     disjoint_union(tag_t<I> t, Args && ...args) : which_(t.value) {
         this->construct_directly(t, std::forward<Args>(args)...);
     }
@@ -121,14 +121,14 @@ public:
         return *this;
     }
 
-    template<std::size_t I> unwrapped_element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
-    template<std::size_t I> unwrapped_element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
-    template<std::size_t I> unwrapped_element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
-    template<std::size_t I> unwrapped_element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
-    template<std::size_t I> unwrapped_element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
-    template<std::size_t I> unwrapped_element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
-    template<std::size_t I> unwrapped_element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
-    template<std::size_t I> unwrapped_element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
+    template<std::size_t I> element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
+    template<std::size_t I> element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
+    template<std::size_t I> element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
+    template<std::size_t I> element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
+    template<std::size_t I> element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
+    template<std::size_t I> element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
 
     std::size_t which() const {
         return which_ & ~backup_mask;
@@ -150,69 +150,69 @@ public:
 
 private:
     template<std::size_t I>
-    element<I> & get_impl(tag_t<I> t) {
+    actual_element<I> & get_impl(tag_t<I> t) {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw std::invalid_argument("bad tag.");
     }
     template<std::size_t I>
-    element<I> const & get_impl(tag_t<I> t) const {
+    actual_element<I> const & get_impl(tag_t<I> t) const {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw std::invalid_argument("bad tag.");
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
-    element<I> & get_unchecked_impl(tag_t<I> t) {
+    actual_element<I> & get_unchecked_impl(tag_t<I> t) {
         static_assert(t.value < elements_size, "tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
-    element<I> & get_unchecked_impl(tag_t<I> t) {
+    actual_element<I> & get_unchecked_impl(tag_t<I> t) {
         static_assert(t.value < elements_size, "tag is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
-    element<I> const & get_unchecked_impl(tag_t<I> t) const {
+    actual_element<I> const & get_unchecked_impl(tag_t<I> t) const {
         static_assert(t.value < elements_size, "tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
-    element<I> const & get_unchecked_impl(tag_t<I> t) const {
+    actual_element<I> const & get_unchecked_impl(tag_t<I> t) const {
         static_assert(t.value < elements_size, "tag is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
-    template<typename Tag, typename T = element<Tag::value>>
+    template<typename Tag, typename T = actual_element<Tag::value>>
     T & get_typed(Tag) {
         return *reinterpret_cast<T*>(&storage_);
     }
-    template<typename Tag, typename T = element<Tag::value>>
+    template<typename Tag, typename T = actual_element<Tag::value>>
     T const & get_typed(Tag) const {
         return *reinterpret_cast<T const *>(&storage_);
     }
-    template<typename Tag, typename T = element<Tag::value>, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond)>
+    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond)>
     T & get_backup(Tag) {
         return **reinterpret_cast<T**>(&storage_);
     }
-    template<typename Tag, typename T = element<Tag::value>, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond)>
+    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond)>
     T const & get_backup(Tag) const {
         return **reinterpret_cast<T * const *>(&storage_);
     }
 
     bool nothrow_copy_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_copy_constructible<element<t.value>>::value;
+                return std::is_nothrow_copy_constructible<actual_element<t.value>>::value;
             });
     }
     bool nothrow_move_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_move_constructible<element<t.value>>::value;
+                return std::is_nothrow_move_constructible<actual_element<t.value>>::value;
             });
     }
     template<typename Union>
     bool nothrow_constructible(Union && other) const {
         using value_type = typename std::decay<Union>::type;
         return other.dispatch([] (auto t) {
-                return std::is_nothrow_constructible<element<t.value>, typename value_type::template element<t.value>&&>::value;
+                return std::is_nothrow_constructible<actual_element<t.value>, typename value_type::template actual_element<t.value>&&>::value;
             });
     }
     template<typename Union>
@@ -223,7 +223,7 @@ private:
     }
     template<std::size_t I, typename ...Args>
     void construct_directly(tag_t<I> t, Args && ...args) {
-        new(&storage_) element<t.value>(std::forward<Args>(args)...);
+        new(&storage_) actual_element<t.value>(std::forward<Args>(args)...);
     }
     void destroy() {
         this->dispatch([&] (auto t) {
@@ -243,14 +243,14 @@ private:
                 this->construct(other);
             } else if (other.nothrow_move_constructible()) {
                 other.dispatch([&] (auto t) {
-                        using other_element = typename disjoint_union<Us...>::template element<t.value>;
-                        other_element tmp(other.get_unchecked(t));
+                        using other_actual_element = typename disjoint_union<Us...>::template actual_element<t.value>;
+                        other_actual_element tmp(other.get_unchecked(t));
                         this->destroy();
                         this->construct_directly(t, std::move(tmp));
                     });
             } else if (this->nothrow_move_constructible()) {
                 this->dispatch([&] (auto t) {
-                        element<t.value> tmp(std::move(this->get_unchecked(t)));
+                        actual_element<t.value> tmp(std::move(this->get_unchecked(t)));
                         this->destroy(t);
                         try {
                             this->construct(other);
@@ -277,7 +277,7 @@ private:
                 this->construct(std::move(other));
             } else if (this->nothrow_move_constructible()) {
                 this->dispatch([&] (auto t) {
-                        element<t.value> tmp(std::move(this->get_unchecked(t)));
+                        actual_element<t.value> tmp(std::move(this->get_unchecked(t)));
                         this->destroy(t);
                         try {
                             this->construct(std::move(other));
@@ -309,7 +309,7 @@ private:
     template<typename Union, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(!cond), typename = void>
     void assign_without_nothrow_guarantee(Union && other) {
         other.dispatch([&] (auto t) {
-                auto p = new element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
+                auto p = new actual_element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
                 try {
                     this->destroy(t);
                     this->construct(std::forward<Union>(other));
