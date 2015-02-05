@@ -46,6 +46,8 @@ template<typename ...Ts, typename ...Us> bool operator<(disjoint_union<Ts...> co
 template<typename ...Ts, typename ...Us> bool operator>(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator<=(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator>=(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
+template<typename F> auto fix(F);
+template<typename F, std::size_t> auto fix_impl(F);
 
 // aliases
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
@@ -425,7 +427,7 @@ template<typename T, typename ...Ts>
 union aligned_union_impl<T, Ts...> {
     aligned_union_impl() {}
     ~aligned_union_impl() {}
-    T head;
+    alignas(T) char head[sizeof(T)];
     aligned_union_impl<Ts...> tail;
 };
 
@@ -547,8 +549,12 @@ struct unexpected_case : std::logic_error {
 // fix
 template<typename F>
 auto fix(F f) {
+    return here::fix_impl<F, 0>(std::move(f));
+}
+template<typename F, std::size_t>
+auto fix_impl(F f) {
     return [f=std::move(f)] (auto && ...args) {
-            return f(here::fix(f), std::forward<decltype(args)>(args)...);
+            return f(here::fix_impl<F, sizeof...(args)>(f), std::forward<decltype(args)>(args)...);
         };
 }
 
