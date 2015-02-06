@@ -35,6 +35,7 @@ template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
 template<typename F, typename ...Ts, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> std::true_type callable_with_test(int);
 template<typename ...> std::false_type callable_with_test(...);
 struct unexpected_case;
+struct bad_tag;
 template<typename, typename> struct unfold_impl_1;
 template<typename, std::size_t, typename> struct unfold_impl_2;
 template<std::size_t> struct _r;
@@ -151,15 +152,15 @@ public:
     }
 
 private:
-    template<std::size_t I>
+    template<std::size_t I, typename E = bad_tag>
     actual_element<I> & get_impl(tag_t<I> t) {
         if (t.value == which()) return get_unchecked_impl(t);
-        else throw std::invalid_argument("bad tag.");
+        else throw E();
     }
-    template<std::size_t I>
+    template<std::size_t I, typename E = bad_tag>
     actual_element<I> const & get_impl(tag_t<I> t) const {
         if (t.value == which()) return get_unchecked_impl(t);
-        else throw std::invalid_argument("bad tag.");
+        else throw E();
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DISJOINT_UNION_REQUIRE(cond)>
     actual_element<I> & get_unchecked_impl(tag_t<I> t) {
@@ -544,6 +545,10 @@ tie_t<Fs...> tie(Fs ...fs) {
 // unexpected_case
 struct unexpected_case : std::logic_error {
     unexpected_case() : logic_error("unexpected case") {}
+};
+// bad_tag
+struct bad_tag : std::invalid_argument {
+    bad_tag() : invalid_argument("bad tag") {}
 };
 
 // fix
