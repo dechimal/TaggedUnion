@@ -197,8 +197,8 @@ int main() {
     {
         // recursion with nested and outer placeholder
         using u = disjoint_union<disjoint_union<_, _r<1>, char>, int>;
-        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), disjoint_union<_, u, char>&>::value, "recursion with nested and outer placeholder 1");
-        static_assert(std::is_same<decltype(std::declval<u&>().get(_0).get(_1)), u&>::value, "recursion with nested and outer placeholder 2");
+        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), disjoint_union<_, u, char>&>::value, "failed at recursion with nested and outer placeholder 1");
+        static_assert(std::is_same<decltype(std::declval<u&>().get(_0).get(_1)), u&>::value, "failed at recursion with nested and outer placeholder 2");
         u a(_1, 42);
         u b(_0, { _0, { _2, 'a' } });
         u c(_0, { _1, { _1, 42 } });
@@ -219,5 +219,16 @@ int main() {
         ilist xs(_1, std::make_tuple(42, ilist(_0)));
         clist ys(_1, std::make_tuple(42, clist(_0)));
         assert(xs == ys);
+    }
+    {
+        using ternary_tree = disjoint_union<int, std::array<_, 3>>;
+        auto n = ternary_tree(_1, {{{_0, 1}, {_0, 2}, {_0, 3}}});
+        n.when(::tie(
+            [] (tag_t<0>, int) {
+                assert(false);
+            },
+            [] (tag_t<1>, std::array<ternary_tree, 3> const & ar) {
+                assert(ar[0].get(_0) == 1 && ar[1].get(_0) == 2 && ar[2].get(_0) == 3);
+            }));
     }
 }
