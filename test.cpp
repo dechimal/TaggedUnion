@@ -15,6 +15,7 @@ using desalt::disjoint_union::tie;
 using desalt::disjoint_union::fix;
 using desalt::disjoint_union::_;
 using desalt::disjoint_union::_r;
+using desalt::disjoint_union::type_fun;
 
 struct hoge {
     hoge(int x) : x(x) {}
@@ -40,6 +41,19 @@ struct hoge {
     }
     bool b = false;
     int x;
+};
+
+template<typename T, std::size_t N, typename U>
+struct non_type_parameter_template {
+    T x[N];
+    U y[N];
+};
+
+template<typename Tag, typename T, typename N, typename U>
+struct make_non_type_parameter_template;
+template<typename T, typename N, typename U>
+struct make_non_type_parameter_template<type_fun, T, N, U> {
+    using type = non_type_parameter_template<T, N::value, U>;
 };
 
 int main() {
@@ -122,7 +136,7 @@ int main() {
         assert(v3.empty());
     }
     {
-        // indirect recursion
+        // recursive type using class member
         struct leaf {};
         struct node {
             node(int x, leaf l, leaf r) : x(x), l(_0, l), r(_0, r) {}
@@ -130,7 +144,7 @@ int main() {
             node(int x, leaf l, node r) : x(x), l(_0, l), r(_1, r) {}
             node(int x, node l, node r) : x(x), l(_1, l), r(_1, r) {}
             int x;
-            disjoint_union<leaf, recursive<node>> l;
+            disjoint_union<leaf, recursive<node>> l; // recursive<T> prevent to cyclic class definition.
             disjoint_union<leaf, recursive<node>> r;
         };
         node n(1,
@@ -153,7 +167,7 @@ int main() {
         assert(n.x + n.l.when(g) + n.r.when(g) == 15);
     }
     {
-        // direct recursion
+        // direct recursive type
         struct leaf {};
         using node = disjoint_union<leaf, std::tuple<int, _, _>>;
         auto make_leaf = [] () { return node(_0, leaf{}); };
@@ -221,6 +235,8 @@ int main() {
         assert(xs == ys);
     }
     {
+        // recursion with non-type parameter using traits
+        // (traits of std::array is already defined in this implementation)
         using ternary_tree = disjoint_union<int, std::array<_, 3>>;
         auto n = ternary_tree(_1, {{{_0, 1}, {_0, 2}, {_0, 3}}});
         n.when(::tie(
@@ -230,5 +246,13 @@ int main() {
             [] (tag_t<1>, std::array<ternary_tree, 3> const & ar) {
                 assert(ar[0].get(_0) == 1 && ar[1].get(_0) == 2 && ar[2].get(_0) == 3);
             }));
+    }
+    {
+        // recursion with non-type parameter (ad-hoc way)
+        using type = make_non_type_parameter_template<type_fun, _, std::integral_constant<std::size_t, 2>, int>;
+        using u = disjoint_union<recursive<type>, int>;
+        u x(_1, 42);
+        using expected = non_type_parameter_template<u, 2, int>;
+        static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");
     }
 }

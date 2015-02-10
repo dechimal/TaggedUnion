@@ -57,6 +57,7 @@ template<typename ...Ts, typename ...Us> bool operator<=(disjoint_union<Ts...> c
 template<typename ...Ts, typename ...Us> bool operator>=(disjoint_union<Ts...> const &, disjoint_union<Us...> const &);
 template<typename F> auto fix(F);
 template<typename F, std::size_t> auto fix_impl(F);
+struct type_fun;
 
 // aliases
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
@@ -602,6 +603,7 @@ template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, 
 template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T const volatile> : id<typename unfold_impl_2<Union, I, T>::type const volatile> {};
 template<typename Union, std::size_t I, typename T, std::size_t N> struct unfold_impl_2<Union, I, T[N]> : id<typename unfold_impl_2<Union, I, T>::type[N]> {};
 template<typename Union, std::size_t I, template<typename ...> class Tmpl, typename ...Ts> struct unfold_impl_2<Union, I, Tmpl<Ts...>> : id<Tmpl<typename unfold_impl_2<Union, I, Ts>::type...>> {};
+template<typename Union, std::size_t I, template<typename ...> class Tmpl, typename ...Ts> struct unfold_impl_2<Union, I, Tmpl<type_fun, Ts...>> : id<typename Tmpl<type_fun, typename unfold_impl_2<Union, I, Ts>::type...>::type> {};
 template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...)> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...)> {};
 template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const> {};
 template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile> {};
@@ -642,8 +644,12 @@ template<std::size_t I> struct need_recursion_protection<I, _r<I>> : std::true_t
 // _r
 template<std::size_t>
 struct _r {
-    template<int I = 0> _r() { static_assert(I, "_r<I> is recursion placeholder. must not use as value."); }
+    // To use `_r` as a value is probably failed to be substituted.
+    template<int I = 0> _r() { static_assert(I - I, "_r<I> is recursion placeholder. must not use as value."); }
 };
+
+// type_fun
+struct type_fun {};
 
 #undef DESALT_DISJOINT_UNION_REQUIRE
 #undef DESALT_DISJOINT_VALID_EXPR
@@ -687,6 +693,7 @@ using detail::tie;
 using detail::fix;
 using detail::_;
 using detail::_r;
+using detail::type_fun;
 
 constexpr tag_t<0> _0{};
 constexpr tag_t<1> _1{};
