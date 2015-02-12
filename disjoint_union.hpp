@@ -1,3 +1,6 @@
+#if !defined DESALT_DISJOINT_UNION_HPP_INCLUDED_
+#define      DESALT_DISJOINT_UNION_HPP_INCLUDED_
+
 #include <type_traits>
 #include <utility>
 #include <stdexcept>
@@ -707,3 +710,5 @@ constexpr tag_t<8> _8{};
 constexpr tag_t<9> _9{};
 
 }} // namespace desalt { namespace disjoint_union {
+
+#endif
