@@ -29,8 +29,6 @@ template<typename ...> struct disjoint_union;
 template<typename, typename> struct visitor_table;
 template<typename T> inline void destroy(T &);
 template<std::size_t, typename ...> struct find_fallback_type;
-template<std::size_t, typename ...> union aligned_union_t;
-template<typename ...> union aligned_union_impl;
 constexpr bool all();
 template<typename T, typename ...Ts> constexpr bool all(T, Ts...);
 template<typename T, typename U, DESALT_DISJOINT_UNION_VALID_EXPR(std::declval<T>() == std::declval<U>())> std::true_type equality_comparable_test(int);
@@ -368,8 +366,8 @@ private:
 
     std::size_t which_;
     typename std::conditional<enable_fallback,
-        aligned_union_t<0, unfold<Ts>...>,
-        aligned_union_t<0, unfold<Ts>..., void*>>::type storage_;
+        std::aligned_union_t<0, unfold<Ts>...>,
+        std::aligned_union_t<0, unfold<Ts>..., void*>>::type storage_;
 };
 
 template<typename ...Ts, typename ...Us>
@@ -424,25 +422,6 @@ template<typename T>
 void destroy(T & x) {
     x.~T();
 }
-
-// aligned_union_t
-template<std::size_t N, typename ...Ts>
-union aligned_union_t {
-    aligned_union_t() {}
-    ~aligned_union_t() {}
-    char pad1[N > 0 ? N : 1];
-    aligned_union_impl<Ts...> pad2;
-};
-// aligned_union_impl
-template<>
-union aligned_union_impl<> {};
-template<typename T, typename ...Ts>
-union aligned_union_impl<T, Ts...> {
-    aligned_union_impl() {}
-    ~aligned_union_impl() {}
-    alignas(T) char head[sizeof(T)];
-    aligned_union_impl<Ts...> tail;
-};
 
 // find_fallback_type
 template<std::size_t I>
