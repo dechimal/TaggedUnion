@@ -2,7 +2,7 @@
 #include <tuple>
 #include <cassert>
 #include <vector>
-#include "disjoint_union.hpp"
+#include "tagged_union.hpp"
 
 using desalt::tagged_union::_0;
 using desalt::tagged_union::_1;
