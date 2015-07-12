@@ -4,18 +4,18 @@
 #include <vector>
 #include "disjoint_union.hpp"
 
-using desalt::disjoint_union::_0;
-using desalt::disjoint_union::_1;
-using desalt::disjoint_union::_2;
-using desalt::disjoint_union::_3;
-using desalt::disjoint_union::disjoint_union;
-using desalt::disjoint_union::recursive;
-using desalt::disjoint_union::tag_t;
-using desalt::disjoint_union::tie;
-using desalt::disjoint_union::fix;
-using desalt::disjoint_union::_;
-using desalt::disjoint_union::_r;
-using desalt::disjoint_union::type_fun;
+using desalt::tagged_union::_0;
+using desalt::tagged_union::_1;
+using desalt::tagged_union::_2;
+using desalt::tagged_union::_3;
+using desalt::tagged_union::tagged_union;
+using desalt::tagged_union::recursive;
+using desalt::tagged_union::tag_t;
+using desalt::tagged_union::tie;
+using desalt::tagged_union::fix;
+using desalt::tagged_union::_;
+using desalt::tagged_union::_r;
+using desalt::tagged_union::type_fun;
 
 struct hoge {
     hoge(int x) : x(x) {}
@@ -59,7 +59,7 @@ struct make_non_type_parameter_template<type_fun, T, N, U> {
 int main() {
     {
         // construct, assign, exception safety
-        disjoint_union<int, double, hoge, hoge> a(_1, 10.0);
+        tagged_union<int, double, hoge, hoge> a(_1, 10.0);
         assert(a.get(_1) == 10.0);
         auto b = a;
         assert(b.get(_1) == 10.0);
@@ -88,8 +88,8 @@ int main() {
     }
     {
         // strong guarantee without fallback type
-        disjoint_union<hoge, hoge> a(_0, hoge{42});
-        disjoint_union<hoge, hoge> b(_1, hoge{24});
+        tagged_union<hoge, hoge> a(_0, hoge{42});
+        tagged_union<hoge, hoge> b(_1, hoge{24});
         b.get(_1).b = true;
         try {
             a = b;
@@ -100,16 +100,16 @@ int main() {
     }
     {
         // equality
-        disjoint_union<int, hoge> a(_0, 42);
-        disjoint_union<int, hoge> b(_1, hoge{42});
+        tagged_union<int, hoge> a(_0, 42);
+        tagged_union<int, hoge> b(_1, hoge{42});
         assert(a != b);
         a = { _1, hoge{42} };
         assert(a == b);
     }
     {
         // strong guarantee without nothrow constructible type
-        disjoint_union<hoge, hoge> a(_0, hoge{42});
-        disjoint_union<hoge, hoge> b(_1, hoge{42});
+        tagged_union<hoge, hoge> a(_0, hoge{42});
+        tagged_union<hoge, hoge> b(_1, hoge{42});
         b.get(_1).b = true;
         try {
             a = b;
@@ -120,14 +120,14 @@ int main() {
     }
     {
         // less
-        disjoint_union<int, double> a(_0, 42);
-        disjoint_union<int, double> b(_1, 10.0);
+        tagged_union<int, double> a(_0, 42);
+        tagged_union<int, double> b(_1, 10.0);
         assert(a < b);
     }
     {
         // move
-        disjoint_union<int, std::vector<int>> a(_0, 10);
-        disjoint_union<int, std::vector<int>> b(_1, {1, 2, 3});
+        tagged_union<int, std::vector<int>> a(_0, 10);
+        tagged_union<int, std::vector<int>> b(_1, {1, 2, 3});
         a = std::move(b);
         auto & v1 = a.get(_1);
         auto v2 = {1, 2, 3};
@@ -144,8 +144,8 @@ int main() {
             node(int x, leaf l, node r) : x(x), l(_0, l), r(_1, r) {}
             node(int x, node l, node r) : x(x), l(_1, l), r(_1, r) {}
             int x;
-            disjoint_union<leaf, recursive<node>> l; // recursive<T> prevent to cyclic class definition.
-            disjoint_union<leaf, recursive<node>> r;
+            tagged_union<leaf, recursive<node>> l; // recursive<T> prevent to cyclic class definition.
+            tagged_union<leaf, recursive<node>> r;
         };
         node n(1,
                leaf{},
@@ -169,7 +169,7 @@ int main() {
     {
         // direct recursive type
         struct leaf {};
-        using node = disjoint_union<leaf, std::tuple<int, _, _>>;
+        using node = tagged_union<leaf, std::tuple<int, _, _>>;
         auto make_leaf = [] () { return node(_0, leaf{}); };
         auto make_node = [] (int v, node l, node r) {
                 return node(_1, std::make_tuple(v, std::move(l), std::move(r)));
@@ -195,8 +195,8 @@ int main() {
     }
     {
         // recursion with nest
-        using u1 = disjoint_union<int, _>;
-        using u2 = disjoint_union<_, u1, char>;
+        using u1 = tagged_union<int, _>;
+        using u2 = tagged_union<_, u1, char>;
         static_assert(std::is_same<decltype(std::declval<u1&>().get(_1)), u1&>::value, "failed at recursion type 1");
         static_assert(std::is_same<decltype(std::declval<u2&>().get(_0)), u2&>::value, "failed at recursion type 2");
         u2 x = u2(_1, u1(_1, u1(_0, 42)));
@@ -204,14 +204,14 @@ int main() {
     }
     {
         // fallback type in recursion type
-        using u = disjoint_union<std::tuple<_>, char>;
+        using u = tagged_union<std::tuple<_>, char>;
         u x(_1, 'a');
         assert(x == x);
     }
     {
         // recursion with nested and outer placeholder
-        using u = disjoint_union<disjoint_union<_, _r<1>, char>, int>;
-        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), disjoint_union<_, u, char>&>::value, "failed at recursion with nested and outer placeholder 1");
+        using u = tagged_union<tagged_union<_, _r<1>, char>, int>;
+        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), tagged_union<_, u, char>&>::value, "failed at recursion with nested and outer placeholder 1");
         static_assert(std::is_same<decltype(std::declval<u&>().get(_0).get(_1)), u&>::value, "failed at recursion with nested and outer placeholder 2");
         u a(_1, 42);
         u b(_0, { _0, { _2, 'a' } });
@@ -227,8 +227,8 @@ int main() {
         struct unit {
             bool operator==(unit) const { return true; }
         };
-        using ilist = disjoint_union<unit, std::tuple<int, _>>;
-        using clist = disjoint_union<unit, std::tuple<char, _>>;
+        using ilist = tagged_union<unit, std::tuple<int, _>>;
+        using clist = tagged_union<unit, std::tuple<char, _>>;
 
         ilist xs(_1, std::make_tuple(42, ilist(_0)));
         clist ys(_1, std::make_tuple(42, clist(_0)));
@@ -237,7 +237,7 @@ int main() {
     {
         // recursion with non-type parameter using traits
         // (traits of std::array is already defined in this implementation)
-        using ternary_tree = disjoint_union<int, std::array<_, 3>>;
+        using ternary_tree = tagged_union<int, std::array<_, 3>>;
         auto n = ternary_tree(_1, {{{_0, 1}, {_0, 2}, {_0, 3}}});
         n.when(::tie(
             [] (tag_t<0>, int) {
@@ -250,7 +250,7 @@ int main() {
     {
         // recursion with non-type parameter (ad-hoc way)
         using type = make_non_type_parameter_template<type_fun, _, std::integral_constant<std::size_t, 2>, int>;
-        using u = disjoint_union<recursive<type>, int>;
+        using u = tagged_union<recursive<type>, int>;
         u x(_1, 42);
         using expected = non_type_parameter_template<u, 2, int>;
         static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");
