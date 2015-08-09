@@ -33,15 +33,15 @@ constexpr bool all();
 template<typename T, typename ...Ts> constexpr bool all(T, Ts...);
 template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() == std::declval<U>())> std::true_type equality_comparable_test(int);
 template<typename, typename> std::false_type equality_comparable_test(...);
-template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() < std::declval<U>())> std::true_type less_than_comparable_test(int);
+template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() < std::declval<U>()), typename = void> std::true_type less_than_comparable_test(int);
 template<typename, typename> std::false_type less_than_comparable_test(...);
 template<std::size_t, typename ...> struct at_impl;
 template<typename> struct recursive;
 template<typename> struct unwrap_impl;
 template<typename ...Fs> struct tie_t;
 template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
-template<typename F, typename ...Ts, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> std::true_type callable_with_test(int);
-template<typename ...> std::false_type callable_with_test(...);
+template<typename F, typename ...Ts, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> constexpr std::true_type callable_with_test(int);
+template<typename ...> constexpr std::false_type callable_with_test(...);
 struct unexpected_case;
 struct bad_tag;
 template<typename, typename> struct unfold_impl_1;
@@ -59,13 +59,16 @@ template<typename ...Ts, typename ...Us> bool operator>=(tagged_union<Ts...> con
 template<typename F> auto fix(F);
 template<typename F, std::size_t> auto fix_impl(F);
 struct type_fun;
+struct make_dependency;
+template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
+template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(callable_with<F, make_dependency>{})> constexpr decltype(auto) static_if(F, Fs ...);
+template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(!callable_with<F, make_dependency>{}), typename = void> constexpr decltype(auto) static_if(F, Fs ...);
+constexpr void static_if();
 
-// aliases
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
 template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
-template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
 using _ = _r<0>;
 
 // implementations
@@ -149,6 +152,7 @@ public:
 
     template<typename F>
     auto dispatch(F f) const -> decltype(auto) {
+        // following comment out code is broken still with clang 3.6.2
         // using iseq = std::index_sequence_for<Ts...>;
         // return here::visitor_table<F, iseq>::table[which()](f);
         return here::visitor_table<F, std::index_sequence_for<Ts...>>::table[which()](f);
@@ -174,23 +178,23 @@ private:
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
     actual_element<I> & get_unchecked_impl(tag_t<I> t) {
-        static_assert(t.value < elements_size, "tag is too large.");
+        static_assert(t.value < elements_size, "the tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
     actual_element<I> & get_unchecked_impl(tag_t<I> t) {
-        static_assert(t.value < elements_size, "tag is too large.");
-        if (!backedup()) return get_typed(t);
+        static_assert(t.value < elements_size, "the tag is too large.");
+        if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
     actual_element<I> const & get_unchecked_impl(tag_t<I> t) const {
-        static_assert(t.value < elements_size, "tag is too large.");
+        static_assert(t.value < elements_size, "the tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
     actual_element<I> const & get_unchecked_impl(tag_t<I> t) const {
-        static_assert(t.value < elements_size, "tag is too large.");
+        static_assert(t.value < elements_size, "the tag is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
@@ -243,98 +247,6 @@ private:
                 this->destroy(t);
             });
     }
-
-    template<typename ...Us>
-    void assign(tagged_union<Us...> const & other) & {
-        if (which_ == other.which_) {
-            this->dispatch([&] (auto t) {
-                    this->get_unchecked(t) = other.get_unchecked(t);
-                });
-        } else {
-            if (this->nothrow_constructible(other)) {
-                this->destroy();
-                this->construct(other);
-            } else if (other.nothrow_move_constructible()) {
-                other.dispatch([&] (auto t) {
-                        using other_actual_element = typename tagged_union<Us...>::template actual_element<t.value>;
-                        other_actual_element tmp(other.get_unchecked(t));
-                        this->destroy();
-                        this->construct_directly(t, std::move(tmp));
-                    });
-            } else if (this->nothrow_move_constructible()) {
-                this->dispatch([&] (auto t) {
-                        actual_element<t.value> tmp(std::move(this->get_unchecked(t)));
-                        this->destroy(t);
-                        try {
-                            this->construct(other);
-                        } catch (...) {
-                            this->construct_directly(t, std::move(tmp));
-                            throw;
-                        }
-                    });
-            } else {
-                this->assign_without_nothrow_guarantee(other);
-            }
-            this->set_which(other.which());
-        }
-    }
-    template<typename ...Us>
-    void assign(tagged_union<Us...> && other) & {
-        if (which_ == other.which_) {
-            this->dispatch([&] (auto t) {
-                    this->get_unchecked(t) = std::move(other).get_unchecked(t);
-                });
-        } else {
-            if (this->nothrow_constructible(std::move(other))) {
-                this->destroy();
-                this->construct(std::move(other));
-            } else if (this->nothrow_move_constructible()) {
-                this->dispatch([&] (auto t) {
-                        actual_element<t.value> tmp(std::move(this->get_unchecked(t)));
-                        this->destroy(t);
-                        try {
-                            this->construct(std::move(other));
-                        } catch (...) {
-                            this->construct_directly(t, std::move(tmp));
-                            throw;
-                        }
-                    });
-            } else {
-                this->assign_without_nothrow_guarantee(std::move(other));
-            }
-            this->set_which(other.which());
-        }
-    }
-
-    template<typename Union, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
-    void assign_without_nothrow_guarantee(Union && other) {
-        other.dispatch([&] (auto t) {
-                try {
-                    this->destroy(t);
-                    this->construct(std::forward<Union>(other));
-                } catch (...) {
-                    this->construct_directly(fallback_tag{});
-                    this->set_which(fallback_tag::value);
-                    throw;
-                }
-            });
-    }
-    template<typename Union, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
-    void assign_without_nothrow_guarantee(Union && other) {
-        other.dispatch([&] (auto t) {
-                auto p = new actual_element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
-                try {
-                    this->destroy(t);
-                    this->construct(std::forward<Union>(other));
-                    delete p;
-                } catch (...) {
-                    *reinterpret_cast<void **>(&this->storage_) = p;
-                    this->mark_as_backup();
-                    throw;
-                }
-            });
-    }
-
     template<typename Tag, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
     void destroy(Tag t) {
         here::destroy(get_typed(t));
@@ -343,6 +255,100 @@ private:
     void destroy(Tag t) {
         if (backedup()) delete &get_backup(t);
         else here::destroy(get_typed(t));
+    }
+
+    template<typename Union>
+    void assign(Union && other) {
+        if (which_ == other.which_) {
+            this->copy_or_move_assign(std::forward<Union>(other));
+        } else {
+            if (this->nothrow_constructible(std::forward<Union>(other))) {
+                this->construct_using_nothrow_constructor(std::forward<Union>(other));
+            } else {
+                auto fallback = here::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(std::is_lvalue_reference<Union&&>::value)> * = {}) {
+                    bool nothrow_move_constructible = other.nothrow_move_constructible();
+                    if (nothrow_move_constructible) {
+                        this->construct_using_right_hand_move_constructor(other);
+                    }
+                    return !nothrow_move_constructible;
+                }, [] (auto) {
+                    return std::true_type{};
+                });
+                if (fallback) {
+                    if (this->nothrow_move_constructible()) {
+                        this->construct_using_auto_storage_save(std::forward<Union>(other));
+                    } else {
+                        here::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(enable_fallback)> * = {}) {
+                            this->construct_using_fallback_type(std::forward<Union>(other));
+                        }, [&] (auto) {
+                            this->construct_using_dynamic_storage_save(std::forward<Union>(other));
+                        });
+                    }
+                }
+            }
+            this->set_which(other.which());
+        }
+    }
+    template<typename Union>
+    void copy_or_move_assign(Union && other) {
+        this->dispatch([&] (auto t) {
+                this->get_unchecked(t) = std::forward<Union>(other).get_unchecked(t);
+            });
+    }
+    template<typename Union>
+    void construct_using_nothrow_constructor(Union && other) {
+        this->destroy();
+        this->construct(std::forward<Union>(other));
+    }
+    template<typename Union>
+    void construct_using_right_hand_move_constructor(Union const & other) {
+        other.dispatch([&] (auto t) {
+                using other_actual_element = typename std::decay_t<Union>::template actual_element<t.value>;
+                other_actual_element tmp(other.get_unchecked(t));
+                this->destroy();
+                this->construct_directly(t, std::move(tmp));
+            });
+    }
+    template<typename Union>
+    void construct_using_auto_storage_save(Union && other) {
+        this->dispatch([&] (auto t) {
+                actual_element<t.value> tmp(std::move(this->get_unchecked(t)));
+                this->destroy(t);
+                try {
+                    this->construct(std::forward<Union>(other));
+                } catch (...) {
+                    this->construct_directly(t, std::move(tmp));
+                    throw;
+                }
+            });
+    }
+    template<typename Union, typename FallbackTag = fallback_tag>
+    void construct_using_fallback_type(Union && other) {
+        this->dispatch([&] (auto t) {
+            try {
+                this->destroy(t);
+                this->construct(std::forward<Union>(other));
+            } catch (...) {
+                this->construct_directly(FallbackTag{});
+                this->set_which(FallbackTag::value);
+                throw;
+            }
+        });
+    }
+    template<typename Union>
+    void construct_using_dynamic_storage_save(Union && other) {
+        this->dispatch([&] (auto t) {
+            auto p = new actual_element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
+            try {
+                this->destroy(t);
+                this->construct(std::forward<Union>(other));
+                delete p;
+            } catch (...) {
+                *reinterpret_cast<void **>(&this->storage_) = p;
+                this->mark_as_backup();
+                throw;
+            }
+        });
     }
 
     template<typename ...Ts1, typename ...Ts2> friend bool operator==(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
@@ -504,7 +510,7 @@ template<typename T> struct unwrap_impl<recursive<T>> { using type = T; };
 // `tie_t` is a function object type to tie some function objects.
 // `f` denotes value of `tie_t`, `args...` denotes function argument list,
 // `f_i denotes ith element of constructor argument list of `f`.
-// In function calling `f(args...)`, `tie_t` resolves overload by following rule:
+// In call `f(args...)`, `tie_t` resolves overload by following rule:
 //  - if `f_i(std::forward<Args>(args)...)` is valid expression, then it calls `f_i`,
 //  - otherwise this step applies to f_i+1.
 // This behavior is intent to use as pattern matching in functional programming languages.
@@ -632,6 +638,25 @@ struct _r {
 
 // type_fun
 struct type_fun {};
+
+// make_dependency
+struct make_dependency {
+    constexpr make_dependency() = default;
+    template<typename T>
+    constexpr T && operator()(T && x) const noexcept { return std::forward<T>(x); }
+};
+
+// static_if
+template<typename F, typename ...Fs, typename>
+constexpr decltype(auto) static_if(F f, Fs ...) {
+    return f(make_dependency{});
+}
+
+template<typename F, typename ...Fs, typename, typename>
+constexpr decltype(auto) static_if(F, Fs ...fs) {
+    return here::static_if(std::move(fs)...);
+}
+constexpr void static_if() {}
 
 #undef DESALT_TAGGED_UNION_REQUIRE
 #undef DESALT_TAGGED_VALID_EXPR
