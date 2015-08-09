@@ -255,4 +255,23 @@ int main() {
         using expected = non_type_parameter_template<u, 2, int>;
         static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");
     }
+    {
+        // return type deduction of when member function
+        using u = tagged_union<int, int, int, int>;
+        struct hogera{};
+        struct piyo{ piyo()=default; piyo(hogera){} };
+        struct fuga{ fuga()=default; fuga(piyo){} };
+        struct hoge{ hoge()=default; hoge(fuga){} };
+
+        u x(_0, {});
+        x.dispatch(::tie([] (tag<0>) {
+            return hoge{};
+        }, [] (tag<1>) {
+            return fuga{};
+        }, [] (tag<2>) {
+            return piyo{};
+        }, [] (tag<3>) {
+            return hogera{};
+        }));
+    }
 }

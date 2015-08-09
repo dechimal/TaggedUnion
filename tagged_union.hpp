@@ -75,6 +75,8 @@ template<typename F, typename ...Ts> using callable_with = decltype(here::callab
 template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(callable_with<F, make_dependency>{})> constexpr decltype(auto) static_if(F, Fs ...);
 template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(!callable_with<F, make_dependency>{}), typename = void> constexpr decltype(auto) static_if(F, Fs ...);
 constexpr void static_if();
+template<typename ...> struct deduce_return_type;
+template<typename T> T declval();
 
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
@@ -160,23 +162,30 @@ public:
         return which_ & ~backup_mask;
     }
 
+    // the result type is `decltype(true ? f(tag<0>{}) : true ? f(tag<1>{}) : ... true ? f(tag<N - 2>{}) : f(tag<N - 1>{}))`,
+    // where `N` is `sizeof...(Ts)`.
     template<typename F>
     auto dispatch(F f) const -> decltype(auto) {
-        // following comment out code is broken still with clang 3.6.2
+        // following commented out code is broken still clang 3.6.2
         // using iseq = std::index_sequence_for<Ts...>;
         // return here::visitor_table<F, iseq>::table[which()](f);
         return here::visitor_table<F, std::index_sequence_for<Ts...>>::table[which()](f);
     }
 
+    // the result type is
+    // `decltype(true ? f(tag<0>{}, this->get(tag<0>{}))
+    //         : true ? f(tag<1>{}, this->get(tag<1>{})) : ...
+    //           true ? f(tag<N - 2>{}, this->get(tag<N - 2>{})) : f(tag<N - 1>{}, this->get(tag<N - 1>{})))`,
+    // where `N` is `sizeof...(Ts)`.
     template<typename F>
     auto when(F f) const -> decltype(auto) {
-        return this->dispatch([&] (auto t) {
+        return this->dispatch([&] (auto t) -> decltype(auto) {
                 return f(t, this->get_unchecked(t));
             });
     }
     template<typename F>
     auto when(F f) -> decltype(auto) {
-        return this->dispatch([&] (auto t) {
+        return this->dispatch([&] (auto t) -> decltype(auto) {
                 return f(t, this->get_unchecked(t));
             });
     }
@@ -428,10 +437,18 @@ bool operator>=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
 // visitor_table
 template<typename F, std::size_t ...Is>
 struct visitor_table<F, std::index_sequence<Is...>> {
-    using result_type = typename std::common_type<decltype(std::declval<F &>()(tag<Is>{}))...>::type;
+    using result_type = typename deduce_return_type<decltype(here::declval<F &>()(tag<Is>{}))...>::type;
     using visitor_type = result_type(*)(F &);
-    template<typename std::size_t I>
+    template<std::size_t I>
     static result_type visit(F & f) {
+        return convert<0, I, Is...>(f);
+    }
+    template<std::size_t K, std::size_t I, std::size_t J, std::size_t ...Js, DESALT_TAGGED_UNION_REQUIRE(K != I)>
+    static typename deduce_return_type<decltype(here::declval<F &>()(tag<J>{})), decltype(here::declval<F &>()(tag<Js>{}))...>::type convert(F & f) {
+        return convert<K+1, I, Js...>(f);
+    }
+    template<std::size_t K, std::size_t I, std::size_t ...Js, DESALT_TAGGED_UNION_REQUIRE(K == I), typename = void>
+    static typename deduce_return_type<decltype(here::declval<F &>()(tag<Js>{}))...>::type convert(F & f) {
         return f(tag<I>{});
     }
     static constexpr visitor_type table[sizeof...(Is)]{ &visit<Is>... };
@@ -673,6 +690,25 @@ constexpr decltype(auto) static_if(F, Fs ...fs) {
     return here::static_if(std::move(fs)...);
 }
 constexpr void static_if() {}
+
+// deduce_return_type
+template<typename T>
+struct deduce_return_type<T> {
+    using type = T;
+};
+template<>
+struct deduce_return_type<void> {
+    using type = void;
+};
+template<typename ...Ts>
+struct deduce_return_type<void, Ts...> {
+    static_assert(std::is_same<typename deduce_return_type<Ts...>::type, void>{}, "failed to deduce return type in tagged_union::when or tagged_union::dispatch.");
+    using type = typename deduce_return_type<Ts...>::type;
+};
+template<typename T, typename ...Ts>
+struct deduce_return_type<T, Ts...> {
+    using type = decltype(true ? here::declval<T>() : here::declval<typename deduce_return_type<Ts...>::type>());
+};
 
 #undef DESALT_TAGGED_UNION_REQUIRE
 #undef DESALT_TAGGED_VALID_EXPR
