@@ -75,26 +75,42 @@ template<typename F, typename ...Ts> using callable_with = decltype(here::callab
 template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(callable_with<F, make_dependency>{})> constexpr decltype(auto) static_if(F, Fs ...);
 template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(!callable_with<F, make_dependency>{}), typename = void> constexpr decltype(auto) static_if(F, Fs ...);
 constexpr void static_if();
-template<typename ...> struct deduce_return_type;
+template<typename ...> struct deduce_return_type_impl;
 template<typename T> T declval();
+template<typename Union> struct is_tagged_union;
+template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend(Union &&);
+template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_left(Union &&);
+template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
+template<typename, typename> struct extended_element_impl;
+template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
+template<std::size_t, typename F> constexpr decltype(auto) with_index_sequence(F);
+template<std::size_t ...Is, typename F> constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F);
 
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
 template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
+template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
+template<typename Union, typename T> using unfold = typename unfold_impl_1<Union, T>::type;
+template<typename Union, std::size_t I, typename ...Ts> using actual_element = at<I, unfold<Union, Ts>...>;
+template<typename Union, std::size_t I, typename ...Ts> using element = unwrap<actual_element<Union, I, Ts...>>;
+template<typename ...Ts> using deduce_return_type = typename deduce_return_type_impl<Ts...>::type;
+template<typename Union, typename T> using extended_element = typename extended_element_impl<Union, T>::type;
+template<std::size_t I, typename ...Ts> using extended_tag = typename extended_tag_impl<I, 0, Ts...>::type;
+
 
 // implementations
 
 // tagged_union
 template<typename ...Ts>
 class tagged_union {
-    template<typename T> using unfold = typename here::unfold_impl_1<tagged_union, T>::type;
+    template<typename T> using unfold = here::unfold<tagged_union, T>;
     using fallback_tag = typename find_fallback_type<0, unfold<Ts>...>::type;
     static constexpr std::size_t elements_size = sizeof...(Ts);
     static constexpr bool enable_fallback = fallback_tag::value != elements_size;
     static constexpr std::size_t backup_mask = ~(~(std::size_t)0 >> 1);
-    template<std::size_t I> using actual_element = at<I, unfold<Ts>...>;
-    template<std::size_t I> using element = unwrap<actual_element<I>>;
+    template<std::size_t I> using actual_element = here::actual_element<tagged_union, I, Ts...>;
+    template<std::size_t I> using element = here::element<tagged_union, I, Ts...>;
 
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
 
@@ -177,18 +193,12 @@ public:
     //         : true ? f(tag<1>{}, this->get(tag<1>{})) : ...
     //           true ? f(tag<N - 2>{}, this->get(tag<N - 2>{})) : f(tag<N - 1>{}, this->get(tag<N - 1>{})))`,
     // where `N` is `sizeof...(Ts)`.
-    template<typename F>
-    auto when(F f) const -> decltype(auto) {
-        return this->dispatch([&] (auto t) -> decltype(auto) {
-                return f(t, this->get_unchecked(t));
-            });
-    }
-    template<typename F>
-    auto when(F f) -> decltype(auto) {
-        return this->dispatch([&] (auto t) -> decltype(auto) {
-                return f(t, this->get_unchecked(t));
-            });
-    }
+    template<typename F> auto when(F f)        & -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> auto when(F f) const  & -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> auto when(F f)       && -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> auto when(F f) const && -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+
+    static constexpr std::size_t size = sizeof...(Ts);
 
 private:
     template<std::size_t I, typename E = bad_tag>
@@ -437,18 +447,18 @@ bool operator>=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
 // visitor_table
 template<typename F, std::size_t ...Is>
 struct visitor_table<F, std::index_sequence<Is...>> {
-    using result_type = typename deduce_return_type<decltype(here::declval<F &>()(tag<Is>{}))...>::type;
+    using result_type = deduce_return_type<decltype(here::declval<F &>()(tag<Is>{}))...>;
     using visitor_type = result_type(*)(F &);
     template<std::size_t I>
     static result_type visit(F & f) {
         return convert<0, I, Is...>(f);
     }
     template<std::size_t K, std::size_t I, std::size_t J, std::size_t ...Js, DESALT_TAGGED_UNION_REQUIRE(K != I)>
-    static typename deduce_return_type<decltype(here::declval<F &>()(tag<J>{})), decltype(here::declval<F &>()(tag<Js>{}))...>::type convert(F & f) {
+    static deduce_return_type<decltype(here::declval<F &>()(tag<J>{})), decltype(here::declval<F &>()(tag<Js>{}))...> convert(F & f) {
         return convert<K+1, I, Js...>(f);
     }
     template<std::size_t K, std::size_t I, std::size_t ...Js, DESALT_TAGGED_UNION_REQUIRE(K == I), typename = void>
-    static typename deduce_return_type<decltype(here::declval<F &>()(tag<Js>{}))...>::type convert(F & f) {
+    static deduce_return_type<decltype(here::declval<F &>()(tag<Js>{}))...> convert(F & f) {
         return f(tag<I>{});
     }
     static constexpr visitor_type table[sizeof...(Is)]{ &visit<Is>... };
@@ -691,24 +701,88 @@ constexpr decltype(auto) static_if(F, Fs ...fs) {
 }
 constexpr void static_if() {}
 
-// deduce_return_type
+// deduce_return_type_impl
 template<typename T>
-struct deduce_return_type<T> {
+struct deduce_return_type_impl<T> {
     using type = T;
 };
 template<>
-struct deduce_return_type<void> {
+struct deduce_return_type_impl<void> {
     using type = void;
 };
 template<typename ...Ts>
-struct deduce_return_type<void, Ts...> {
-    static_assert(std::is_same<typename deduce_return_type<Ts...>::type, void>{}, "failed to deduce return type in tagged_union::when or tagged_union::dispatch.");
-    using type = typename deduce_return_type<Ts...>::type;
+struct deduce_return_type_impl<void, Ts...> {
+    static_assert(std::is_same<deduce_return_type<Ts...>, void>{}, "failed to deduce return type in tagged_union::when or tagged_union::dispatch.");
+    using type = deduce_return_type<Ts...>;
 };
 template<typename T, typename ...Ts>
-struct deduce_return_type<T, Ts...> {
-    using type = decltype(true ? here::declval<T>() : here::declval<typename deduce_return_type<Ts...>::type>());
+struct deduce_return_type_impl<T, Ts...> {
+    using type = decltype(true ? here::declval<T>() : here::declval<deduce_return_type<Ts...>>());
 };
+
+// extend
+template<typename ...Ts, typename Union, typename>
+decltype(auto) extend(Union && u) {
+    return std::forward<Union>(u).when([&] (auto t, auto && x) {
+            return tagged_union<extended_element<std::decay_t<Union>, Ts>...>(extended_tag<t.value, Ts...>{}, std::forward<decltype(x)>(x));
+        });
+}
+
+// extend_left
+template<typename ...Ts, typename Union, typename>
+decltype(auto) extend_left(Union && u) {
+    return here::with_index_sequence<std::decay_t<decltype(u)>::size>([&] (auto ...is) -> decltype(auto) {
+        return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
+    });
+}
+
+// extend_right
+template<typename ...Ts, typename Union, typename>
+decltype(auto) extend_right(Union && u) {
+    return here::with_index_sequence<std::decay_t<decltype(u)>::size>([&] (auto ...is) -> decltype(auto) {
+        return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
+    });
+}
+
+// is_tagged_union
+template<typename> struct is_tagged_union : std::false_type {};
+template<typename ...Ts> struct is_tagged_union<tagged_union<Ts...>> : std::true_type {};
+
+// extended_element_impl
+template<typename ...Ts, typename U>
+struct extended_element_impl<tagged_union<Ts...>, U>
+    : id<U>
+{};
+template<typename ...Ts, std::size_t I>
+struct extended_element_impl<tagged_union<Ts...>, tag<I>>
+    : id<element<tagged_union<Ts...>, I, Ts...>>
+{};
+
+// extended_tag_impl
+template<std::size_t I, std::size_t Res, typename ...Ts>
+struct extended_tag_impl<I, Res, tag<I>, Ts...>
+    : id<tag<Res>>
+{};
+template<std::size_t I, std::size_t Res>
+struct extended_tag_impl<I, Res>
+    : id<tag<Res>>
+{};
+template<std::size_t I, std::size_t Res, typename T, typename ...Ts>
+struct extended_tag_impl<I, Res, T, Ts...>
+    : extended_tag_impl<I, Res + 1, Ts...>
+{};
+
+// with_index_sequence
+template<std::size_t N, typename F>
+constexpr decltype(auto) with_index_sequence(F f) {
+    return here::with_index_sequence_impl(std::make_index_sequence<N>{}, f);
+}
+
+// with_index_sequence_impl
+template<std::size_t ...Is, typename F>
+constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F f) {
+    return f(std::integral_constant<std::size_t, Is>{}...);
+}
 
 #undef DESALT_TAGGED_UNION_REQUIRE
 #undef DESALT_TAGGED_VALID_EXPR
@@ -753,6 +827,9 @@ using detail::fix;
 using detail::rec;
 using _ = rec<0>;
 using detail::type_fun;
+using detail::extend;
+using detail::extend_left;
+using detail::extend_right;
 
 template<std::size_t N> constexpr tag<N> t{};
 constexpr tag<0> _0{};

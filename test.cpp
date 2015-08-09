@@ -16,6 +16,8 @@ using desalt::tagged_union::fix;
 using desalt::tagged_union::_;
 using desalt::tagged_union::rec;
 using desalt::tagged_union::type_fun;
+using desalt::tagged_union::extend;
+using desalt::tagged_union::extend_right;
 
 struct hoge {
     hoge(int x) : x(x) {}
@@ -273,5 +275,16 @@ int main() {
         }, [] (tag<3>) {
             return hogera{};
         }));
+    }
+    {
+        // extension
+        using u = tagged_union<int, int>;
+        auto x = u(_0, 42);
+        auto y = ::extend<tag<1>, char, tag<0>>(x);
+        static_assert(std::is_same<decltype(y), tagged_union<int, char, int>>::value, "failed at extension");
+        assert(y.which() == 2 && y.get(_2) == 42);
+        auto z = ::extend_right<short>(x);
+        static_assert(std::is_same<decltype(z), tagged_union<short, int, int>>::value, "failed at extension");
+        assert(z.which() == 1 && z.get(_1) == 42);
     }
 }
