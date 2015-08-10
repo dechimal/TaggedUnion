@@ -25,7 +25,7 @@ namespace desalt { namespace tagged_union {
 // forward declarations
 namespace traits {
 
-template<typename, template<typename> class, typename = void> struct need_recursion_protection;
+template<typename, template<typename> class, typename = void> struct need_rec_guard;
 template<typename, template<typename> class, typename = void> struct substitute_recursion_placeholder;
 
 } // namespace traits {
@@ -34,7 +34,7 @@ namespace detail {
 
 namespace here = detail;
 
-template<std::size_t I> struct tag_t;
+template<std::size_t I> struct tag;
 template<typename T> struct id;
 template<typename ...> struct tagged_union;
 template<typename, typename> struct visitor_table;
@@ -47,7 +47,7 @@ template<typename, typename> std::false_type equality_comparable_test(...);
 template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() < std::declval<U>()), typename = void> std::true_type less_than_comparable_test(int);
 template<typename, typename> std::false_type less_than_comparable_test(...);
 template<std::size_t, typename ...> struct at_impl;
-template<typename> struct recursive;
+template<typename> struct rec_guard;
 template<typename> struct unwrap_impl;
 template<typename ...Fs> struct tie_t;
 template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
@@ -57,10 +57,10 @@ struct unexpected_case;
 struct bad_tag;
 template<typename, typename> struct unfold_impl_1;
 template<typename, std::size_t, typename> struct unfold_impl_2;
-template<std::size_t, typename> struct need_recursion_protection;
-template<std::size_t> struct _r;
-template<std::size_t I> bool operator==(_r<I>, _r<I>);
-template<std::size_t I> bool operator<(_r<I>, _r<I>);
+template<std::size_t, typename> struct need_rec_guard;
+template<std::size_t> struct rec;
+template<std::size_t I> bool operator==(rec<I>, rec<I>);
+template<std::size_t I> bool operator<(rec<I>, rec<I>);
 template<typename ...Ts, typename ...Us> bool operator==(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator!=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator<(tagged_union<Ts...> const &, tagged_union<Us...> const &);
@@ -80,7 +80,6 @@ template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
 template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
-using _ = _r<0>;
 
 // implementations
 
@@ -99,16 +98,16 @@ class tagged_union {
 
 public:
     template<std::size_t I>
-    tagged_union(tag_t<I> t, element<I> const & x) : which_(t.value) {
+    tagged_union(tag<I> t, element<I> const & x) : which_(t.value) {
         this->construct_directly(t, x);
     }
     template<std::size_t I>
-    tagged_union(tag_t<I> t, element<I> && x) : which_(t.value) {
+    tagged_union(tag<I> t, element<I> && x) : which_(t.value) {
         this->construct_directly(t, std::move(x));
     }
     template<std::size_t I, typename ...Args,
              DESALT_TAGGED_UNION_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
-    tagged_union(tag_t<I> t, Args && ...args) : which_(t.value) {
+    tagged_union(tag<I> t, Args && ...args) : which_(t.value) {
         this->construct_directly(t, std::forward<Args>(args)...);
     }
     tagged_union(tagged_union const & other) : which_(other.which()) {
@@ -148,14 +147,14 @@ public:
         return *this;
     }
 
-    template<std::size_t I> element<I>        & get(tag_t<I> t)        & { return get_impl(t); }
-    template<std::size_t I> element<I> const  & get(tag_t<I> t) const  & { return get_impl(t); }
-    template<std::size_t I> element<I>       && get(tag_t<I> t)       && { return std::move(get_impl(t)); }
-    template<std::size_t I> element<I> const && get(tag_t<I> t) const && { return std::move(get_impl(t)); }
-    template<std::size_t I> element<I>        & get_unchecked(tag_t<I> t)        & { return get_unchecked_impl(t); }
-    template<std::size_t I> element<I> const  & get_unchecked(tag_t<I> t) const  & { return get_unchecked_impl(t); }
-    template<std::size_t I> element<I>       && get_unchecked(tag_t<I> t)       && { return std::move(get_unchecked_impl(t)); }
-    template<std::size_t I> element<I> const && get_unchecked(tag_t<I> t) const && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> element<I>        & get(tag<I> t)        & { return get_impl(t); }
+    template<std::size_t I> element<I> const  & get(tag<I> t) const  & { return get_impl(t); }
+    template<std::size_t I> element<I>       && get(tag<I> t)       && { return std::move(get_impl(t)); }
+    template<std::size_t I> element<I> const && get(tag<I> t) const && { return std::move(get_impl(t)); }
+    template<std::size_t I> element<I>        & get_unchecked(tag<I> t)        & { return get_unchecked_impl(t); }
+    template<std::size_t I> element<I> const  & get_unchecked(tag<I> t) const  & { return get_unchecked_impl(t); }
+    template<std::size_t I> element<I>       && get_unchecked(tag<I> t)       && { return std::move(get_unchecked_impl(t)); }
+    template<std::size_t I> element<I> const && get_unchecked(tag<I> t) const && { return std::move(get_unchecked_impl(t)); }
 
     std::size_t which() const {
         return which_ & ~backup_mask;
@@ -175,36 +174,42 @@ public:
                 return f(t, this->get_unchecked(t));
             });
     }
+    template<typename F>
+    auto when(F f) -> decltype(auto) {
+        return this->dispatch([&] (auto t) {
+                return f(t, this->get_unchecked(t));
+            });
+    }
 
 private:
     template<std::size_t I, typename E = bad_tag>
-    actual_element<I> & get_impl(tag_t<I> t) {
+    actual_element<I> & get_impl(tag<I> t) {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
     template<std::size_t I, typename E = bad_tag>
-    actual_element<I> const & get_impl(tag_t<I> t) const {
+    actual_element<I> const & get_impl(tag<I> t) const {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
-    actual_element<I> & get_unchecked_impl(tag_t<I> t) {
+    actual_element<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
-    actual_element<I> & get_unchecked_impl(tag_t<I> t) {
+    actual_element<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the tag is too large.");
         if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
-    actual_element<I> const & get_unchecked_impl(tag_t<I> t) const {
+    actual_element<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the tag is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
-    actual_element<I> const & get_unchecked_impl(tag_t<I> t) const {
+    actual_element<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the tag is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
@@ -250,7 +255,7 @@ private:
             });
     }
     template<std::size_t I, typename ...Args>
-    void construct_directly(tag_t<I> t, Args && ...args) {
+    void construct_directly(tag<I> t, Args && ...args) {
         new(&storage_) actual_element<t.value>(std::forward<Args>(args)...);
     }
     void destroy() {
@@ -423,11 +428,11 @@ bool operator>=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
 // visitor_table
 template<typename F, std::size_t ...Is>
 struct visitor_table<F, std::index_sequence<Is...>> {
-    using result_type = typename std::common_type<decltype(std::declval<F &>()(tag_t<Is>{}))...>::type;
+    using result_type = typename std::common_type<decltype(std::declval<F &>()(tag<Is>{}))...>::type;
     using visitor_type = result_type(*)(F &);
     template<typename std::size_t I>
     static result_type visit(F & f) {
-        return f(tag_t<I>{});
+        return f(tag<I>{});
     }
     static constexpr visitor_type table[sizeof...(Is)]{ &visit<Is>... };
 };
@@ -442,19 +447,19 @@ void destroy(T & x) {
 
 // find_fallback_type
 template<std::size_t I>
-struct find_fallback_type<I> : tag_t<I> {};
+struct find_fallback_type<I> : tag<I> {};
 template<std::size_t I, typename T, typename ...Ts>
 struct find_fallback_type<I, T, Ts...>
     : std::conditional<std::is_nothrow_default_constructible<T>::value,
-                       tag_t<I>,
+                       tag<I>,
                        find_fallback_type<I+1, Ts...>>::type
 {};
-// Specialization for recursive types. Escape default constructibility inspection of recursive<T>.
+// Specialization for rec_guard types. Escape default constructibility inspection of rec_guard<T>.
 // Because `std::is_nothrow_default_constructible` may inspect default construtibility of `U` in instaciation of `U`,
 // where `U` is a `tagged_union<...>` contains `_`.
-// `recursive` allocates memory in any constructor. So this check may escape.
+// `rec_guard` allocates memory in any constructor. So this check may escape.
 template<std::size_t I, typename T, typename ...Ts>
-struct find_fallback_type<I, recursive<T>, Ts...>
+struct find_fallback_type<I, rec_guard<T>, Ts...>
     : find_fallback_type<I+1, Ts...>
 {};
 
@@ -465,12 +470,12 @@ constexpr bool all(T p, Ts ...ps) {
     return p && here::all(ps...);
 }
 
-// tag_t
+// tag
 template<std::size_t I>
-struct tag_t
+struct tag
     : std::integral_constant<std::size_t, I>
 {
-    using type = tag_t<I>;
+    using type = tag<I>;
 };
 
 // id
@@ -483,25 +488,25 @@ struct id {
 template<typename T, typename ...Ts> struct at_impl<0, T, Ts...> : id<T> {};
 template<std::size_t I, typename T, typename ...Ts> struct at_impl<I, T, Ts...> : at_impl<I-1, Ts...> {};
 
-// recursive
+// rec_guard
 template<typename T>
-struct recursive {
-    explicit recursive() : p(new T()) {}
-    explicit recursive(T const & x) : p(new T(x)) {}
-    explicit recursive(T && x) : p(new T(std::move(x))) {}
+struct rec_guard {
+    explicit rec_guard() : p(new T()) {}
+    explicit rec_guard(T const & x) : p(new T(x)) {}
+    explicit rec_guard(T && x) : p(new T(std::move(x))) {}
     template<typename ...Args, DESALT_TAGGED_UNION_REQUIRE(std::is_constructible<T, Args &&...>::value)>
-    explicit recursive(Args && ...args) : p(new T(std::forward<Args>(args)...)) {}
-    explicit recursive(recursive const & other) : recursive(*other.p) {}
-    explicit recursive(recursive && other) noexcept : p(other.p) {
+    explicit rec_guard(Args && ...args) : p(new T(std::forward<Args>(args)...)) {}
+    explicit rec_guard(rec_guard const & other) : rec_guard(*other.p) {}
+    explicit rec_guard(rec_guard && other) noexcept : p(other.p) {
         other.p = nullptr;
     }
-    ~recursive() { delete p; }
+    ~rec_guard() { delete p; }
 
-    recursive & operator=(recursive const & other) & {
+    rec_guard & operator=(rec_guard const & other) & {
         *p = *other.p;
         return *this;
     }
-    recursive & operator=(recursive && other) & {
+    rec_guard & operator=(rec_guard && other) & {
         *p = std::move(*other.p);
         return *this;
     }
@@ -515,7 +520,7 @@ private:
 
 // unwrap_impl
 template<typename T> struct unwrap_impl { using type = T; };
-template<typename T> struct unwrap_impl<recursive<T>> { using type = T; };
+template<typename T> struct unwrap_impl<rec_guard<T>> { using type = T; };
 
 // tie_t
 // `tie_t` is a function object type to tie some function objects.
@@ -532,9 +537,9 @@ struct tie_t {
     template<bool cond, std::size_t I, typename ...Args>
     struct find_tag_impl : find_tag_impl<callable_with<at<I, Fs...>, Args...>::value, I+1, Args...> {};
     template<typename ...Args>
-    struct find_tag_impl<false, sizeof...(Fs), Args...> : tag_t<sizeof...(Fs)> {};
+    struct find_tag_impl<false, sizeof...(Fs), Args...> : tag<sizeof...(Fs)> {};
     template<std::size_t I, typename ...Args>
-    struct find_tag_impl<true, I, Args...> : tag_t<I-1> {};
+    struct find_tag_impl<true, I, Args...> : tag<I-1> {};
 
     template<typename ...Args>
     using find_tag = typename find_tag_impl<callable_with<at<0, Fs...>, Args...>::value, 1, Args...>::type;
@@ -578,12 +583,12 @@ auto fix_impl(F f) {
 template<typename Self, typename T>
 struct unfold_impl_1 {
     using result = typename unfold_impl_2<Self, 0, T>::type;
-    static constexpr bool need_protection = need_recursion_protection<0, T>::value;
-    using type = typename std::conditional<need_protection, recursive<result>, result>::type;
+    static constexpr bool need_protection = need_rec_guard<0, T>::value;
+    using type = typename std::conditional<need_protection, rec_guard<result>, result>::type;
 };
 template<typename Self, typename T>
-struct unfold_impl_1<Self, recursive<T>>
-    : id<recursive<typename unfold_impl_2<Self, 0, T>::type>>
+struct unfold_impl_1<Self, rec_guard<T>>
+    : id<rec_guard<typename unfold_impl_2<Self, 0, T>::type>>
 {};
 
 // unfold_impl_2
@@ -592,7 +597,7 @@ struct unfold_impl_2 {
     template<typename U> using apply = unfold_impl_2<Union, I, U>;
     using type = typename traits::substitute_recursion_placeholder<T, apply>::type;
 };
-template<typename Union, std::size_t I> struct unfold_impl_2<Union, I, _r<I>> : id<Union> {};
+template<typename Union, std::size_t I> struct unfold_impl_2<Union, I, rec<I>> : id<Union> {};
 template<typename Union, std::size_t I, typename ...Ts> struct unfold_impl_2<Union, I, tagged_union<Ts...>> : id<tagged_union<typename unfold_impl_2<Union, I+1, Ts>::type...>> {};
 template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T*> : id<typename unfold_impl_2<Union, I, T>::type*> {};
 template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&> : id<typename unfold_impl_2<Union, I, T>::type&> {};
@@ -617,22 +622,22 @@ template<typename Union, std::size_t I, typename R, typename ...Args> struct unf
 template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile &&> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile &&> {};
 template<typename Union, std::size_t I, typename T, typename C> struct unfold_impl_2<Union, I, T (C::*)> : id<typename unfold_impl_2<Union, I, T>::type(unfold_impl_2<Union, I, C>::type::*)> {};
 
-// need_recursion_protection
-template<std::size_t I, typename T> struct need_recursion_protection {
-    template<typename U> using apply = need_recursion_protection<I, U>;
-    using type = typename traits::need_recursion_protection<T, apply>::type;
+// need_rec_guard
+template<std::size_t I, typename T> struct need_rec_guard {
+    template<typename U> using apply = need_rec_guard<I, U>;
+    using type = typename traits::need_rec_guard<T, apply>::type;
     using value_type = bool;
     static constexpr bool value = type::value;
     constexpr operator bool() const noexcept { return value; }
     constexpr bool operator()() const noexcept { return value; }
 };
-template<std::size_t I, typename T> struct need_recursion_protection<I, T*> : std::false_type {};
-template<std::size_t I, typename T, typename C> struct need_recursion_protection<I, T (C::*)> : std::false_type {};
-template<std::size_t I, typename T> struct need_recursion_protection<I, T const> : need_recursion_protection<I, T> {};
-template<std::size_t I, typename T> struct need_recursion_protection<I, T volatile> : need_recursion_protection<I, T> {};
-template<std::size_t I, typename T> struct need_recursion_protection<I, T const volatile> : need_recursion_protection<I, T> {};
-template<std::size_t I, typename ...Ts> struct need_recursion_protection<I, tagged_union<Ts...>> : std::integral_constant<bool, !here::all(!need_recursion_protection<I+1, Ts>::value...)> {};
-template<std::size_t I> struct need_recursion_protection<I, _r<I>> : std::true_type {};
+template<std::size_t I, typename T> struct need_rec_guard<I, T*> : std::false_type {};
+template<std::size_t I, typename T, typename C> struct need_rec_guard<I, T (C::*)> : std::false_type {};
+template<std::size_t I, typename T> struct need_rec_guard<I, T const> : need_rec_guard<I, T> {};
+template<std::size_t I, typename T> struct need_rec_guard<I, T volatile> : need_rec_guard<I, T> {};
+template<std::size_t I, typename T> struct need_rec_guard<I, T const volatile> : need_rec_guard<I, T> {};
+template<std::size_t I, typename ...Ts> struct need_rec_guard<I, tagged_union<Ts...>> : std::integral_constant<bool, !here::all(!need_rec_guard<I+1, Ts>::value...)> {};
+template<std::size_t I> struct need_rec_guard<I, rec<I>> : std::true_type {};
 
 // u<int, _>
 // u<int, rec<u<int, _>>>
@@ -640,11 +645,11 @@ template<std::size_t I> struct need_recursion_protection<I, _r<I>> : std::true_t
 // u<std::tuple<int, _, _>, x>
 // u<rec<std::tuple<int, u<std::tuple<int, _, _>, u<std::tuple<int, _, _>>>, x>
 
-// _r
+// rec
 template<std::size_t>
-struct _r {
-    // To use `_r` as a value is probably failed to be substituted.
-    template<int I = 0> _r() { static_assert(I - I, "_r<I> is recursion placeholder. must not use as value."); }
+struct rec {
+    // To use `rec` as a value is probably failed to be substituted.
+    template<int I = 0> rec() { static_assert(I - I, "rec<I> is recursion placeholder. must not use as value."); }
 };
 
 // type_fun
@@ -676,22 +681,22 @@ constexpr void static_if() {}
 
 namespace traits {
 
-// need_recursion_protection
+// need_rec_guard
 template<typename, template<typename> class, typename>
-struct need_recursion_protection : std::false_type {};
+struct need_rec_guard : std::false_type {};
 
 template<typename T, typename U, template<typename> class Pred>
-struct need_recursion_protection<std::pair<T, U>, Pred>
+struct need_rec_guard<std::pair<T, U>, Pred>
     : std::integral_constant<bool, Pred<T>::value || Pred<U>::value>
 {};
 
 template<typename ...Ts, template<typename> class Pred>
-struct need_recursion_protection<std::tuple<Ts...>, Pred>
+struct need_rec_guard<std::tuple<Ts...>, Pred>
     : std::integral_constant<bool, !detail::all(!Pred<Ts>::value...)>
 {};
 
 template<typename T, std::size_t N, template<typename> class Pred>
-struct need_recursion_protection<std::array<T, N>, Pred> : Pred<T> {};
+struct need_rec_guard<std::array<T, N>, Pred> : Pred<T> {};
 
 // substitute_recursion_placeholder
 template<typename T, template<typename> class, typename>
@@ -705,24 +710,25 @@ struct substitute_recursion_placeholder<std::array<T, N>, Pred>
 } // namespace traits {
 
 using detail::tagged_union;
-using detail::tag_t;
-using detail::recursive;
+using detail::tag;
+using detail::rec_guard;
 using detail::tie;
 using detail::fix;
-using detail::_;
-using detail::_r;
+using detail::rec;
+using _ = rec<0>;
 using detail::type_fun;
 
-constexpr tag_t<0> _0{};
-constexpr tag_t<1> _1{};
-constexpr tag_t<2> _2{};
-constexpr tag_t<3> _3{};
-constexpr tag_t<4> _4{};
-constexpr tag_t<5> _5{};
-constexpr tag_t<6> _6{};
-constexpr tag_t<7> _7{};
-constexpr tag_t<8> _8{};
-constexpr tag_t<9> _9{};
+template<std::size_t N> constexpr tag<N> t{};
+constexpr tag<0> _0{};
+constexpr tag<1> _1{};
+constexpr tag<2> _2{};
+constexpr tag<3> _3{};
+constexpr tag<4> _4{};
+constexpr tag<5> _5{};
+constexpr tag<6> _6{};
+constexpr tag<7> _7{};
+constexpr tag<8> _8{};
+constexpr tag<9> _9{};
 
 }} // namespace desalt { namespace tagged_union {
 

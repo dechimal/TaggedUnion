@@ -9,12 +9,12 @@ using desalt::tagged_union::_1;
 using desalt::tagged_union::_2;
 using desalt::tagged_union::_3;
 using desalt::tagged_union::tagged_union;
-using desalt::tagged_union::recursive;
-using desalt::tagged_union::tag_t;
+using desalt::tagged_union::rec_guard;
+using desalt::tagged_union::tag;
 using desalt::tagged_union::tie;
 using desalt::tagged_union::fix;
 using desalt::tagged_union::_;
-using desalt::tagged_union::_r;
+using desalt::tagged_union::rec;
 using desalt::tagged_union::type_fun;
 
 struct hoge {
@@ -144,8 +144,8 @@ int main() {
             node(int x, leaf l, node r) : x(x), l(_0, l), r(_1, r) {}
             node(int x, node l, node r) : x(x), l(_1, l), r(_1, r) {}
             int x;
-            tagged_union<leaf, recursive<node>> l; // recursive<T> prevent to cyclic class definition.
-            tagged_union<leaf, recursive<node>> r;
+            tagged_union<leaf, rec_guard<node>> l; // rec_guard<T> prevent to cyclic class definition.
+            tagged_union<leaf, rec_guard<node>> r;
         };
         node n(1,
                leaf{},
@@ -159,9 +159,9 @@ int main() {
                               leaf{}),
                          leaf{})));
         auto g = ::fix(::tie(
-            [] (auto, tag_t<0>, leaf) {
+            [] (auto, tag<0>, leaf) {
                 return 0;
-            }, [] (auto f, tag_t<1>, node const & n) -> int {
+            }, [] (auto f, tag<1>, node const & n) -> int {
                 return n.x + n.l.when(f) + n.r.when(f);
             }));
         assert(n.x + n.l.when(g) + n.r.when(g) == 15);
@@ -186,9 +186,9 @@ int main() {
                                                          make_leaf()),
                                                make_leaf())));
         auto g = ::fix(::tie(
-            [] (auto, tag_t<0>, leaf) {
+            [] (auto, tag<0>, leaf) {
                 return 0;
-            }, [] (auto f, tag_t<1>, std::tuple<int, node, node> const & tup) -> int {
+            }, [] (auto f, tag<1>, std::tuple<int, node, node> const & tup) -> int {
                 return std::get<0>(tup) + std::get<1>(tup).when(f) + std::get<2>(tup).when(f);
             }));
         assert(n.when(g) == 15);
@@ -210,7 +210,7 @@ int main() {
     }
     {
         // recursion with nested and outer placeholder
-        using u = tagged_union<tagged_union<_, _r<1>, char>, int>;
+        using u = tagged_union<tagged_union<_, rec<1>, char>, int>;
         static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), tagged_union<_, u, char>&>::value, "failed at recursion with nested and outer placeholder 1");
         static_assert(std::is_same<decltype(std::declval<u&>().get(_0).get(_1)), u&>::value, "failed at recursion with nested and outer placeholder 2");
         u a(_1, 42);
@@ -240,17 +240,17 @@ int main() {
         using ternary_tree = tagged_union<int, std::array<_, 3>>;
         auto n = ternary_tree(_1, {{{_0, 1}, {_0, 2}, {_0, 3}}});
         n.when(::tie(
-            [] (tag_t<0>, int) {
+            [] (tag<0>, int) {
                 assert(false);
             },
-            [] (tag_t<1>, std::array<ternary_tree, 3> const & ar) {
+            [] (tag<1>, std::array<ternary_tree, 3> const & ar) {
                 assert(ar[0].get(_0) == 1 && ar[1].get(_0) == 2 && ar[2].get(_0) == 3);
             }));
     }
     {
         // recursion with non-type parameter (ad-hoc way)
         using type = make_non_type_parameter_template<type_fun, _, std::integral_constant<std::size_t, 2>, int>;
-        using u = tagged_union<recursive<type>, int>;
+        using u = tagged_union<rec_guard<type>, int>;
         u x(_1, 42);
         using expected = non_type_parameter_template<u, 2, int>;
         static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");
