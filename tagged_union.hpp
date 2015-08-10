@@ -6,6 +6,17 @@
 #include <stdexcept>
 #include <tuple>
 
+#if defined __GNUC__
+    #pragma GCC diagnostic push
+    #if !defined __clang__
+        #pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
+    #else
+        #pragma GCC diagnostic ignored "-Wmismatched-tags"
+        #pragma GCC diagnostic ignored "-Wundefined-internal"
+        #pragma GCC diagnostic ignored "-Wundefined-inline"
+    #endif
+#endif
+
 #define DESALT_TAGGED_UNION_REQUIRE(...) typename = typename std::enable_if<(__VA_ARGS__)>::type
 #define DESALT_TAGGED_UNION_VALID_EXPR(...) typename = decltype((__VA_ARGS__), (void)0)
 
@@ -714,5 +725,9 @@ constexpr tag_t<8> _8{};
 constexpr tag_t<9> _9{};
 
 }} // namespace desalt { namespace tagged_union {
+
+#if defined __GNUC__ || __clang__
+    #pragma GCC diagnostic pop
+#endif
 
 #endif
