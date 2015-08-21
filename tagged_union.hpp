@@ -5,6 +5,8 @@
 #include <utility>
 #include <stdexcept>
 #include <tuple>
+#include <limits>
+#include <cstdint>
 
 #if defined __GNUC__
     #pragma GCC diagnostic push
@@ -85,6 +87,7 @@ template<typename, typename> struct extended_element_impl;
 template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
 template<std::size_t, typename F> constexpr decltype(auto) with_index_sequence(F);
 template<std::size_t ...Is, typename F> constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F);
+template<std::size_t N> constexpr auto size_type_impl();
 
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
@@ -97,6 +100,7 @@ template<typename Union, std::size_t I, typename ...Ts> using element = unwrap<a
 template<typename ...Ts> using deduce_return_type = typename deduce_return_type_impl<Ts...>::type;
 template<typename Union, typename T> using extended_element = typename extended_element_impl<Union, T>::type;
 template<std::size_t I, typename ...Ts> using extended_tag = typename extended_tag_impl<I, 0, Ts...>::type;
+template<std::size_t N> using size_type = decltype(size_type_impl<N>());
 
 
 // implementations
@@ -106,15 +110,21 @@ template<typename ...Ts>
 class tagged_union {
     template<typename T> using unfold = here::unfold<tagged_union, T>;
     using fallback_tag = typename find_fallback_type<0, unfold<Ts>...>::type;
-    static constexpr std::size_t elements_size = sizeof...(Ts);
-    static constexpr bool enable_fallback = fallback_tag::value != elements_size;
-    static constexpr std::size_t backup_mask = ~(~(std::size_t)0 >> 1);
+
+public:
+    static constexpr bool enable_fallback = fallback_tag::value != sizeof...(Ts);
+    using which_type = here::size_type<(sizeof...(Ts) + enable_fallback * 2)>;
+    static constexpr which_type elements_size = sizeof...(Ts);
+
+private:
     template<std::size_t I> using actual_element = here::actual_element<tagged_union, I, Ts...>;
     template<std::size_t I> using element = here::element<tagged_union, I, Ts...>;
 
+    static constexpr which_type backup_mask = (which_type)~((which_type)~0 >> 1);
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
 
 public:
+
     template<std::size_t I>
     tagged_union(tag<I> t, element<I> const & x) : which_(t.value) {
         this->construct_directly(t, x);
@@ -174,7 +184,7 @@ public:
     template<std::size_t I> element<I>       && get_unchecked(tag<I> t)       && { return std::move(get_unchecked_impl(t)); }
     template<std::size_t I> element<I> const && get_unchecked(tag<I> t) const && { return std::move(get_unchecked_impl(t)); }
 
-    std::size_t which() const {
+    which_type which() const {
         return which_ & ~backup_mask;
     }
 
@@ -197,8 +207,6 @@ public:
     template<typename F> auto when(F f) const  & -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
     template<typename F> auto when(F f)       && -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
     template<typename F> auto when(F f) const && -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
-
-    static constexpr std::size_t size = sizeof...(Ts);
 
 private:
     template<std::size_t I, typename E = bad_tag>
@@ -393,7 +401,7 @@ private:
     template<typename ...Ts1, typename ...Ts2> friend bool operator<=(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
     template<typename ...Ts1, typename ...Ts2> friend bool operator>=(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
 
-    void set_which(std::size_t which) {
+    void set_which(which_type which) {
         which_ = which;
     }
     template<bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond)>
@@ -405,7 +413,7 @@ private:
         which_ |= backup_mask;
     }
 
-    std::size_t which_;
+    which_type which_;
     typename std::conditional<enable_fallback,
         std::aligned_union_t<0, unfold<Ts>...>,
         std::aligned_union_t<0, unfold<Ts>..., void*>>::type storage_;
@@ -731,7 +739,7 @@ decltype(auto) extend(Union && u) {
 // extend_left
 template<typename ...Ts, typename Union, typename>
 decltype(auto) extend_left(Union && u) {
-    return here::with_index_sequence<std::decay_t<decltype(u)>::size>([&] (auto ...is) -> decltype(auto) {
+    return here::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
         return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
     });
 }
@@ -739,7 +747,7 @@ decltype(auto) extend_left(Union && u) {
 // extend_right
 template<typename ...Ts, typename Union, typename>
 decltype(auto) extend_right(Union && u) {
-    return here::with_index_sequence<std::decay_t<decltype(u)>::size>([&] (auto ...is) -> decltype(auto) {
+    return here::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
         return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
     });
 }
@@ -782,6 +790,20 @@ constexpr decltype(auto) with_index_sequence(F f) {
 template<std::size_t ...Is, typename F>
 constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F f) {
     return f(std::integral_constant<std::size_t, Is>{}...);
+}
+
+// size_type_impl
+template<std::size_t N>
+constexpr auto size_type_impl() {
+    return here::static_if([] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least8_t>::max())> * = {}) {
+        return (std::uint_least8_t)0;
+    }, [] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least16_t>::max())> * = {}) {
+        return (std::uint_least16_t)0;
+    }, [] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least32_t>::max())> * = {}) {
+        return (std::uint_least32_t)0;
+    }, [] (auto) {
+        return (std::uint_least64_t)0;
+    });
 }
 
 #undef DESALT_TAGGED_UNION_REQUIRE
