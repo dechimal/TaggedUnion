@@ -248,6 +248,14 @@ int main() {
             [] (tag<1>, std::array<ternary_tree, 3> const & ar) {
                 assert(ar[0].get(_0) == 1 && ar[1].get(_0) == 2 && ar[2].get(_0) == 3);
             }));
+        // Following is also OK (same with above).
+        n.when(
+            [] (tag<0>, int) {
+                assert(false);
+            },
+            [] (tag<1>, std::array<ternary_tree, 3> const & ar) {
+                assert(ar[0].get(_0) == 1 && ar[1].get(_0) == 2 && ar[2].get(_0) == 3);
+            });
     }
     {
         // recursion with non-type parameter (ad-hoc way)
@@ -258,7 +266,7 @@ int main() {
         static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");
     }
     {
-        // return type deduction of when member function
+        // return type deduction of dispatch/when member function
         using u = tagged_union<int, int, int, int>;
         struct hogera{};
         struct piyo{ piyo()=default; piyo(hogera){} };

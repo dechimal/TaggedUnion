@@ -69,8 +69,8 @@ template<typename ...Ts, typename ...Us> bool operator<(tagged_union<Ts...> cons
 template<typename ...Ts, typename ...Us> bool operator>(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator<=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator>=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename F> auto fix(F);
-template<typename F, std::size_t> auto fix_impl(F);
+template<typename F> decltype(auto) fix(F);
+template<typename F, std::size_t> decltype(auto) fix_impl(F);
 struct type_fun;
 struct make_dependency;
 template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
@@ -191,11 +191,15 @@ public:
     // the result type is `decltype(true ? f(tag<0>{}) : true ? f(tag<1>{}) : ... true ? f(tag<N - 2>{}) : f(tag<N - 1>{}))`,
     // where `N` is `sizeof...(Ts)`.
     template<typename F>
-    auto dispatch(F f) const -> decltype(auto) {
+    decltype(auto) dispatch(F f) const {
         // following commented out code is broken still clang 3.6.2
         // using iseq = std::index_sequence_for<Ts...>;
         // return here::visitor_table<F, iseq>::table[which()](f);
         return here::visitor_table<F, std::index_sequence_for<Ts...>>::table[which()](f);
+    }
+    template<typename ...Fs>
+    decltype(auto) dispatch(Fs ...fs) const {
+        return dispatch(here::tie(std::move(fs)...));
     }
 
     // the result type is
@@ -203,10 +207,14 @@ public:
     //         : true ? f(tag<1>{}, this->get(tag<1>{})) : ...
     //           true ? f(tag<N - 2>{}, this->get(tag<N - 2>{})) : f(tag<N - 1>{}, this->get(tag<N - 1>{})))`,
     // where `N` is `sizeof...(Ts)`.
-    template<typename F> auto when(F f)        & -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
-    template<typename F> auto when(F f) const  & -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
-    template<typename F> auto when(F f)       && -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
-    template<typename F> auto when(F f) const && -> decltype(auto) { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> decltype(auto) when(F f)        & { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> decltype(auto) when(F f) const  & { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> decltype(auto) when(F f)       && { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename F> decltype(auto) when(F f) const && { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs)        & { return when(here::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs) const  & { return when(here::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs)       && { return when(here::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs) const && { return when(here::tie(std::move(fs)...)); }
 
 private:
     template<std::size_t I, typename E = bad_tag>
@@ -580,7 +588,7 @@ struct tie_t {
     using find_tag = typename find_tag_impl<callable_with<at<0, Fs...>, Args...>::value, 1, Args...>::type;
 
     template<typename ...Args, typename Tag = find_tag<Args && ...>, DESALT_TAGGED_UNION_REQUIRE(Tag::value != sizeof...(Fs))>
-    auto operator()(Args && ...args) const -> decltype(auto) {
+    decltype(auto) operator()(Args && ...args) const {
         return std::get<Tag::value>(fs)(std::forward<Args>(args)...);
     }
 private:
@@ -604,12 +612,12 @@ struct bad_tag : std::invalid_argument {
 
 // fix
 template<typename F>
-auto fix(F f) {
+decltype(auto) fix(F f) {
     return here::fix_impl<F, 0>(std::move(f));
 }
 template<typename F, std::size_t>
-auto fix_impl(F f) {
-    return [f=std::move(f)] (auto && ...args) {
+decltype(auto) fix_impl(F f) {
+    return [f=std::move(f)] (auto && ...args) -> decltype(auto) {
             return f(here::fix_impl<F, sizeof...(args)>(f), std::forward<decltype(args)>(args)...);
         };
 }
