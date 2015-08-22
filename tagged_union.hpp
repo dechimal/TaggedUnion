@@ -229,23 +229,23 @@ private:
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
     actual_element<I> & get_unchecked_impl(tag<I> t) {
-        static_assert(t.value < elements_size, "the tag is too large.");
+        static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
     actual_element<I> & get_unchecked_impl(tag<I> t) {
-        static_assert(t.value < elements_size, "the tag is too large.");
+        static_assert(t.value < elements_size, "the index is too large.");
         if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
     actual_element<I> const & get_unchecked_impl(tag<I> t) const {
-        static_assert(t.value < elements_size, "the tag is too large.");
+        static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
     actual_element<I> const & get_unchecked_impl(tag<I> t) const {
-        static_assert(t.value < elements_size, "the tag is too large.");
+        static_assert(t.value < elements_size, "the index is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
@@ -422,9 +422,9 @@ private:
     }
 
     which_type which_;
-    typename std::conditional<enable_fallback,
+    std::conditional_t<enable_fallback,
         std::aligned_union_t<0, unfold<Ts>...>,
-        std::aligned_union_t<0, unfold<Ts>..., void*>>::type storage_;
+        std::aligned_union_t<0, unfold<Ts>..., void*>> storage_;
 };
 
 template<typename ...Ts, typename ...Us>
