@@ -534,10 +534,7 @@ template<std::size_t I, typename T, typename ...Ts> struct at_impl<I, T, Ts...> 
 // rec_guard
 template<typename T>
 struct rec_guard {
-    explicit rec_guard() : p(new T()) {}
-    explicit rec_guard(T const & x) : p(new T(x)) {}
-    explicit rec_guard(T && x) : p(new T(std::move(x))) {}
-    template<typename ...Args, DESALT_TAGGED_UNION_REQUIRE(std::is_constructible<T, Args &&...>::value)>
+    template<typename ...Args>
     explicit rec_guard(Args && ...args) : p(new T(std::forward<Args>(args)...)) {}
     explicit rec_guard(rec_guard const & other) : rec_guard(*other.p) {}
     explicit rec_guard(rec_guard && other) noexcept : p(other.p) {
