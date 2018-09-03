@@ -146,7 +146,7 @@ int main() {
             node(int x, leaf l, node r) : x(x), l(_0, l), r(_1, r) {}
             node(int x, node l, node r) : x(x), l(_1, l), r(_1, r) {}
             int x;
-            tagged_union<leaf, rec_guard<node>> l; // rec_guard<T> prevent to cyclic class definition.
+            tagged_union<leaf, rec_guard<node>> l; // rec_guard<T> prevent cyclic class definition.
             tagged_union<leaf, rec_guard<node>> r;
         };
         node n(1,

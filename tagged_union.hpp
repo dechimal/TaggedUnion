@@ -684,7 +684,7 @@ template<std::size_t I> struct need_rec_guard<I, rec<I>> : std::true_type {};
 // rec
 template<std::size_t>
 struct rec {
-    // To use `rec` as a value is probably failed to be substituted.
+    // using `rec` as a value is probably failed to be substituted.
     template<int I = 0> rec() { static_assert(I - I, "rec<I> is recursion placeholder. must not use as value."); }
 };
 
