@@ -69,8 +69,8 @@ template<typename ...Ts, typename ...Us> bool operator<(tagged_union<Ts...> cons
 template<typename ...Ts, typename ...Us> bool operator>(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator<=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator>=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename F> decltype(auto) fix(F);
-template<typename F, std::size_t> decltype(auto) fix_impl(F);
+template<typename F> decltype(auto) fix(F &&);
+template<std::size_t, typename F> decltype(auto) fix_impl(F &&);
 struct type_fun;
 struct make_dependency;
 template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
@@ -612,13 +612,13 @@ struct bad_tag : std::invalid_argument {
 
 // fix
 template<typename F>
-decltype(auto) fix(F f) {
-    return here::fix_impl<F, 0>(std::move(f));
+decltype(auto) fix(F && f) {
+    return here::fix_impl<0>(std::forward<F>(f));
 }
-template<typename F, std::size_t>
-decltype(auto) fix_impl(F f) {
-    return [f=std::move(f)] (auto && ...args) -> decltype(auto) {
-            return f(here::fix_impl<F, sizeof...(args)>(f), std::forward<decltype(args)>(args)...);
+template<std::size_t, typename F>
+decltype(auto) fix_impl(F && f) {
+    return [f{std::forward<F>(f)}] (auto && ...args) -> decltype(auto) {
+            return f(here::fix_impl<sizeof...(args)>(f), std::forward<decltype(args)>(args)...);
         };
 }
 
