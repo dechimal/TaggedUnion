@@ -574,19 +574,15 @@ template<typename ...Fs>
 struct tie_t {
     tie_t(Fs ...fs) : fs(std::move(fs)...) {}
 
-    template<bool cond, std::size_t I, typename ...Args>
-    struct find_tag_impl : find_tag_impl<callable_with<at<I, Fs...>, Args...>::value, I+1, Args...> {};
-    template<typename ...Args>
-    struct find_tag_impl<false, sizeof...(Fs), Args...> : tag<sizeof...(Fs)> {};
-    template<std::size_t I, typename ...Args>
-    struct find_tag_impl<true, I, Args...> : tag<I-1> {};
+    static constexpr std::size_t find_first_set(std::initializer_list<bool> bs) {
+        std::size_t i = 0;
+        for (auto b : bs) if (b) return i; else ++i;
+        return i;
+    }
 
-    template<typename ...Args>
-    using find_tag = typename find_tag_impl<callable_with<at<0, Fs...>, Args...>::value, 1, Args...>::type;
-
-    template<typename ...Args, typename Tag = find_tag<Args && ...>, DESALT_TAGGED_UNION_REQUIRE(Tag::value != sizeof...(Fs))>
+    template<typename ...Args, std::size_t Index = find_first_set({callable_with<Fs, Args && ...>::value...}), DESALT_TAGGED_UNION_REQUIRE(Index != sizeof...(Fs))>
     decltype(auto) operator()(Args && ...args) const {
-        return std::get<Tag::value>(fs)(std::forward<Args>(args)...);
+        return std::get<Index>(fs)(std::forward<Args>(args)...);
     }
 private:
     std::tuple<Fs...> fs;
