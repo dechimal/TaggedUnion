@@ -3,10 +3,10 @@
 
 all: test-all
 test-all:
-	for i in g++ clang++; do \
+	@PS4= set -ex; for i in g++ clang++; do \
 	  $(MAKE) test CXX=$$i; \
 	done
 
 test:
-	$(CXX) -std=c++14 $(CXXFLAGS) $(CPPFLAGS) test.cpp -o test -Wall -Wextra -pedantic -g
+	$(CXX) -std=c++14 $(CXXFLAGS) $(CPPFLAGS) test.cpp -o test -Wall -Wextra -pedantic -g -I$(PWD)/include
 	./test
