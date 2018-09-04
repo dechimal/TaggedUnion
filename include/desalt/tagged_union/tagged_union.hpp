@@ -1,5 +1,5 @@
-#if !defined DESALT_TAGGED_UNION_HPP_INCLUDED_
-#define      DESALT_TAGGED_UNION_HPP_INCLUDED_
+#if !defined DESALT_TAGGED_UNION_TAGGED_UNION_HPP_INCLUDED_
+#define      DESALT_TAGGED_UNION_TAGGED_UNION_HPP_INCLUDED_
 
 #include <type_traits>
 #include <utility>
@@ -7,6 +7,8 @@
 #include <tuple>
 #include <limits>
 #include <cstdint>
+#include <array>
+#include <desalt/tagged_union/utils.hpp>
 
 #if defined __GNUC__
     #pragma GCC diagnostic push
@@ -18,9 +20,6 @@
         #pragma GCC diagnostic ignored "-Wundefined-inline"
     #endif
 #endif
-
-#define DESALT_TAGGED_UNION_REQUIRE(...) typename = typename std::enable_if<(__VA_ARGS__)>::type
-#define DESALT_TAGGED_UNION_VALID_EXPR(...) typename = decltype((__VA_ARGS__), (void)0)
 
 namespace desalt { namespace tagged_union {
 
@@ -37,24 +36,16 @@ namespace detail {
 namespace here = detail;
 
 template<std::size_t I> struct tag;
-template<typename T> struct id;
 template<typename ...> struct tagged_union;
 template<typename, typename> struct visitor_table;
 template<typename T> inline void destroy(T &);
 template<std::size_t, typename ...> struct find_fallback_type;
-constexpr bool all();
-template<typename T, typename ...Ts> constexpr bool all(T, Ts...);
 template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() == std::declval<U>())> std::true_type equality_comparable_test(int);
 template<typename, typename> std::false_type equality_comparable_test(...);
 template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() < std::declval<U>()), typename = void> std::true_type less_than_comparable_test(int);
 template<typename, typename> std::false_type less_than_comparable_test(...);
-template<std::size_t, typename ...> struct at_impl;
 template<typename> struct rec_guard;
 template<typename> struct unwrap_impl;
-template<typename ...Fs> struct tie_t;
-template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
-template<typename F, typename ...Ts, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> constexpr std::true_type callable_with_test(int);
-template<typename ...> constexpr std::false_type callable_with_test(...);
 struct unexpected_case;
 struct bad_tag;
 template<typename, typename> struct unfold_impl_1;
@@ -69,14 +60,6 @@ template<typename ...Ts, typename ...Us> bool operator<(tagged_union<Ts...> cons
 template<typename ...Ts, typename ...Us> bool operator>(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator<=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator>=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename F> decltype(auto) fix(F &&);
-template<std::size_t, typename F> decltype(auto) fix_impl(F &&);
-struct type_fun;
-struct make_dependency;
-template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
-template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(callable_with<F, make_dependency>{})> constexpr decltype(auto) static_if(F, Fs ...);
-template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(!callable_with<F, make_dependency>{}), typename = void> constexpr decltype(auto) static_if(F, Fs ...);
-constexpr void static_if();
 template<typename ...> struct deduce_return_type_impl;
 template<typename T> T declval();
 template<typename Union> struct is_tagged_union;
@@ -85,12 +68,9 @@ template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_uni
 template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
 template<typename, typename> struct extended_element_impl;
 template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
-template<std::size_t, typename F> constexpr decltype(auto) with_index_sequence(F);
-template<std::size_t ...Is, typename F> constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F);
 template<std::size_t N> constexpr auto size_type_impl();
 
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
-template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
 template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
 template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
@@ -506,13 +486,6 @@ struct find_fallback_type<I, rec_guard<T>, Ts...>
     : find_fallback_type<I+1, Ts...>
 {};
 
-// all
-constexpr bool all() { return true; }
-template<typename T, typename ...Ts>
-constexpr bool all(T p, Ts ...ps) {
-    return p && here::all(ps...);
-}
-
 // tag
 template<std::size_t I>
 struct tag
@@ -520,16 +493,6 @@ struct tag
 {
     using type = tag<I>;
 };
-
-// id
-template<typename T>
-struct id {
-    using type = T;
-};
-
-// at
-template<typename T, typename ...Ts> struct at_impl<0, T, Ts...> : id<T> {};
-template<std::size_t I, typename T, typename ...Ts> struct at_impl<I, T, Ts...> : at_impl<I-1, Ts...> {};
 
 // rec_guard
 template<typename T>
@@ -562,38 +525,6 @@ private:
 template<typename T> struct unwrap_impl { using type = T; };
 template<typename T> struct unwrap_impl<rec_guard<T>> { using type = T; };
 
-// tie_t
-// `tie_t` is a function object type to tie some function objects.
-// `f` denotes value of `tie_t`, `args...` denotes function argument list,
-// `f_i denotes ith element of constructor argument list of `f`.
-// In call `f(args...)`, `tie_t` resolves overload by following rule:
-//  - if `f_i(std::forward<Args>(args)...)` is valid expression, then it calls `f_i`,
-//  - otherwise this step applies to f_i+1.
-// This behavior is intent to use as pattern matching in functional programming languages.
-template<typename ...Fs>
-struct tie_t {
-    tie_t(Fs ...fs) : fs(std::move(fs)...) {}
-
-    static constexpr std::size_t find_first_set(std::initializer_list<bool> bs) {
-        std::size_t i = 0;
-        for (auto b : bs) if (b) return i; else ++i;
-        return i;
-    }
-
-    template<typename ...Args, std::size_t Index = find_first_set({callable_with<Fs, Args && ...>::value...}), DESALT_TAGGED_UNION_REQUIRE(Index != sizeof...(Fs))>
-    decltype(auto) operator()(Args && ...args) const {
-        return std::get<Index>(fs)(std::forward<Args>(args)...);
-    }
-private:
-    std::tuple<Fs...> fs;
-};
-
-// tie
-template<typename ...Fs>
-tie_t<Fs...> tie(Fs ...fs) {
-    return { std::move(fs)... };
-}
-
 // unexpected_case
 struct unexpected_case : std::logic_error {
     unexpected_case() : logic_error("unexpected case") {}
@@ -602,18 +533,6 @@ struct unexpected_case : std::logic_error {
 struct bad_tag : std::invalid_argument {
     bad_tag() : invalid_argument("bad tag") {}
 };
-
-// fix
-template<typename F>
-decltype(auto) fix(F && f) {
-    return here::fix_impl<0>(std::forward<F>(f));
-}
-template<std::size_t, typename F>
-decltype(auto) fix_impl(F && f) {
-    return [f{std::forward<F>(f)}] (auto && ...args) -> decltype(auto) {
-            return f(here::fix_impl<sizeof...(args)>(f), std::forward<decltype(args)>(args)...);
-        };
-}
 
 // unfold_impl_1
 template<typename Self, typename T>
@@ -688,28 +607,6 @@ struct rec {
     template<int I = 0> rec() { static_assert(I - I, "rec<I> is recursion placeholder. must not use as value."); }
 };
 
-// type_fun
-struct type_fun {};
-
-// make_dependency
-struct make_dependency {
-    constexpr make_dependency() = default;
-    template<typename T>
-    constexpr T && operator()(T && x) const noexcept { return std::forward<T>(x); }
-};
-
-// static_if
-template<typename F, typename ...Fs, typename>
-constexpr decltype(auto) static_if(F f, Fs ...) {
-    return f(make_dependency{});
-}
-
-template<typename F, typename ...Fs, typename, typename>
-constexpr decltype(auto) static_if(F, Fs ...fs) {
-    return here::static_if(std::move(fs)...);
-}
-constexpr void static_if() {}
-
 // deduce_return_type_impl
 template<typename T>
 struct deduce_return_type_impl<T> {
@@ -781,18 +678,6 @@ struct extended_tag_impl<I, Res, T, Ts...>
     : extended_tag_impl<I, Res + 1, Ts...>
 {};
 
-// with_index_sequence
-template<std::size_t N, typename F>
-constexpr decltype(auto) with_index_sequence(F f) {
-    return here::with_index_sequence_impl(std::make_index_sequence<N>{}, f);
-}
-
-// with_index_sequence_impl
-template<std::size_t ...Is, typename F>
-constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F f) {
-    return f(std::integral_constant<std::size_t, Is>{}...);
-}
-
 // size_type_impl
 template<std::size_t N>
 constexpr auto size_type_impl() {
@@ -845,11 +730,8 @@ struct substitute_recursion_placeholder<std::array<T, N>, Pred>
 using detail::tagged_union;
 using detail::tag;
 using detail::rec_guard;
-using detail::tie;
-using detail::fix;
 using detail::rec;
 using _ = rec<0>;
-using detail::type_fun;
 using detail::extend;
 using detail::extend_left;
 using detail::extend_right;
