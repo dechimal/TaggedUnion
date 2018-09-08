@@ -8,7 +8,7 @@ using desalt::datatypes::_0;
 using desalt::datatypes::_1;
 using desalt::datatypes::_2;
 using desalt::datatypes::_3;
-using desalt::datatypes::tagged_union;
+using desalt::datatypes::sum;
 using desalt::datatypes::rec_guard;
 using desalt::datatypes::tag;
 using desalt::datatypes::tie;
@@ -61,7 +61,7 @@ struct make_non_type_parameter_template<type_fun, T, N, U> {
 int main() {
     {
         // construct, assign, exception safety
-        tagged_union<int, double, hoge, hoge> a(_1, 10.0);
+        sum<int, double, hoge, hoge> a(_1, 10.0);
         assert(a.get(_1) == 10.0);
         auto b = a;
         assert(b.get(_1) == 10.0);
@@ -90,8 +90,8 @@ int main() {
     }
     {
         // strong guarantee without fallback type
-        tagged_union<hoge, hoge> a(_0, hoge{42});
-        tagged_union<hoge, hoge> b(_1, hoge{24});
+        sum<hoge, hoge> a(_0, hoge{42});
+        sum<hoge, hoge> b(_1, hoge{24});
         b.get(_1).b = true;
         try {
             a = b;
@@ -102,16 +102,16 @@ int main() {
     }
     {
         // equality
-        tagged_union<int, hoge> a(_0, 42);
-        tagged_union<int, hoge> b(_1, hoge{42});
+        sum<int, hoge> a(_0, 42);
+        sum<int, hoge> b(_1, hoge{42});
         assert(a != b);
         a = { _1, hoge{42} };
         assert(a == b);
     }
     {
         // strong guarantee without nothrow constructible type
-        tagged_union<hoge, hoge> a(_0, hoge{42});
-        tagged_union<hoge, hoge> b(_1, hoge{42});
+        sum<hoge, hoge> a(_0, hoge{42});
+        sum<hoge, hoge> b(_1, hoge{42});
         b.get(_1).b = true;
         try {
             a = b;
@@ -122,14 +122,14 @@ int main() {
     }
     {
         // less
-        tagged_union<int, double> a(_0, 42);
-        tagged_union<int, double> b(_1, 10.0);
+        sum<int, double> a(_0, 42);
+        sum<int, double> b(_1, 10.0);
         assert(a < b);
     }
     {
         // move
-        tagged_union<int, std::vector<int>> a(_0, 10);
-        tagged_union<int, std::vector<int>> b(_1, {1, 2, 3});
+        sum<int, std::vector<int>> a(_0, 10);
+        sum<int, std::vector<int>> b(_1, {1, 2, 3});
         a = std::move(b);
         auto & v1 = a.get(_1);
         auto v2 = {1, 2, 3};
@@ -146,8 +146,8 @@ int main() {
             node(int x, leaf l, node r) : x(x), l(_0, l), r(_1, r) {}
             node(int x, node l, node r) : x(x), l(_1, l), r(_1, r) {}
             int x;
-            tagged_union<leaf, rec_guard<node>> l; // rec_guard<T> prevent cyclic class definition.
-            tagged_union<leaf, rec_guard<node>> r;
+            sum<leaf, rec_guard<node>> l; // rec_guard<T> prevent cyclic class definition.
+            sum<leaf, rec_guard<node>> r;
         };
         node n(1,
                leaf{},
@@ -171,7 +171,7 @@ int main() {
     {
         // direct recursive type
         struct leaf {};
-        using node = tagged_union<leaf, std::tuple<int, _, _>>;
+        using node = sum<leaf, std::tuple<int, _, _>>;
         auto make_leaf = [] () { return node(_0, leaf{}); };
         auto make_node = [] (int v, node l, node r) {
                 return node(_1, std::make_tuple(v, std::move(l), std::move(r)));
@@ -197,8 +197,8 @@ int main() {
     }
     {
         // recursion with nest
-        using u1 = tagged_union<int, _>;
-        using u2 = tagged_union<_, u1, char>;
+        using u1 = sum<int, _>;
+        using u2 = sum<_, u1, char>;
         static_assert(std::is_same<decltype(std::declval<u1&>().get(_1)), u1&>::value, "failed at recursion type 1");
         static_assert(std::is_same<decltype(std::declval<u2&>().get(_0)), u2&>::value, "failed at recursion type 2");
         u2 x = u2(_1, u1(_1, u1(_0, 42)));
@@ -206,14 +206,14 @@ int main() {
     }
     {
         // fallback type in recursion type
-        using u = tagged_union<std::tuple<_>, char>;
+        using u = sum<std::tuple<_>, char>;
         u x(_1, 'a');
         assert(x == x);
     }
     {
         // recursion with nested and outer placeholder
-        using u = tagged_union<tagged_union<_, rec<1>, char>, int>;
-        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), tagged_union<_, u, char>&>::value, "failed at recursion with nested and outer placeholder 1");
+        using u = sum<sum<_, rec<1>, char>, int>;
+        static_assert(std::is_same<decltype(std::declval<u&>().get(_0)), sum<_, u, char>&>::value, "failed at recursion with nested and outer placeholder 1");
         static_assert(std::is_same<decltype(std::declval<u&>().get(_0).get(_1)), u&>::value, "failed at recursion with nested and outer placeholder 2");
         u a(_1, 42);
         u b(_0, { _0, { _2, 'a' } });
@@ -229,8 +229,8 @@ int main() {
         struct unit {
             bool operator==(unit) const { return true; }
         };
-        using ilist = tagged_union<unit, std::tuple<int, _>>;
-        using clist = tagged_union<unit, std::tuple<char, _>>;
+        using ilist = sum<unit, std::tuple<int, _>>;
+        using clist = sum<unit, std::tuple<char, _>>;
 
         ilist xs(_1, std::make_tuple(42, ilist(_0)));
         clist ys(_1, std::make_tuple(42, clist(_0)));
@@ -239,7 +239,7 @@ int main() {
     {
         // recursion with non-type parameter using traits
         // (traits of std::array is already defined in this implementation)
-        using ternary_tree = tagged_union<int, std::array<_, 3>>;
+        using ternary_tree = sum<int, std::array<_, 3>>;
         auto n = ternary_tree(_1, {{{_0, 1}, {_0, 2}, {_0, 3}}});
         n.when(::tie(
             [] (tag<0>, int) {
@@ -260,14 +260,14 @@ int main() {
     {
         // recursion with non-type parameter (ad-hoc way)
         using type = make_non_type_parameter_template<type_fun, _, std::integral_constant<std::size_t, 2>, int>;
-        using u = tagged_union<rec_guard<type>, int>;
+        using u = sum<rec_guard<type>, int>;
         u x(_1, 42);
         using expected = non_type_parameter_template<u, 2, int>;
         static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");
     }
     {
         // return type deduction of dispatch/when member function
-        using u = tagged_union<int, int, int, int>;
+        using u = sum<int, int, int, int>;
         struct hogera{};
         struct piyo{ piyo()=default; piyo(hogera){} };
         struct fuga{ fuga()=default; fuga(piyo){} };
@@ -286,13 +286,13 @@ int main() {
     }
     {
         // extension
-        using u = tagged_union<int, int>;
+        using u = sum<int, int>;
         auto x = u(_0, 42);
         auto y = ::extend<tag<1>, char, tag<0>>(x);
-        static_assert(std::is_same<decltype(y), tagged_union<int, char, int>>::value, "failed at extension");
+        static_assert(std::is_same<decltype(y), sum<int, char, int>>::value, "failed at extension");
         assert(y.which() == 2 && y.get(_2) == 42);
         auto z = ::extend_right<short>(x);
-        static_assert(std::is_same<decltype(z), tagged_union<short, int, int>>::value, "failed at extension");
+        static_assert(std::is_same<decltype(z), sum<short, int, int>>::value, "failed at extension");
         assert(z.which() == 1 && z.get(_1) == 42);
     }
 }

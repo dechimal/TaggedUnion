@@ -1,5 +1,5 @@
-#if !defined DESALT_DATATYPES_TAGGED_UNION_HPP_INCLUDED_
-#define      DESALT_DATATYPES_TAGGED_UNION_HPP_INCLUDED_
+#if !defined DESALT_DATATYPES_SUM_HPP_INCLUDED_
+#define      DESALT_DATATYPES_SUM_HPP_INCLUDED_
 
 #include <type_traits>
 #include <utility>
@@ -27,28 +27,28 @@ namespace desalt { namespace datatypes {
 namespace detail {
 namespace here = detail;
 
-namespace tagged_union {
-namespace here = tagged_union;
+namespace sum {
+namespace here = sum;
 
 using utils::tag;
 
-template<typename ...> struct tagged_union;
+template<typename ...> struct sum;
 template<typename, typename> struct visitor_table;
 template<typename T> inline void destroy(T &);
 template<std::size_t, typename ...> struct find_fallback_type;
 struct unexpected_case;
 struct bad_tag;
-template<typename ...Ts, typename ...Us> bool operator==(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename ...Ts, typename ...Us> bool operator!=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename ...Ts, typename ...Us> bool operator<(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename ...Ts, typename ...Us> bool operator>(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename ...Ts, typename ...Us> bool operator<=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
-template<typename ...Ts, typename ...Us> bool operator>=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator==(sum<Ts...> const &, sum<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator!=(sum<Ts...> const &, sum<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator<(sum<Ts...> const &, sum<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator>(sum<Ts...> const &, sum<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator<=(sum<Ts...> const &, sum<Us...> const &);
+template<typename ...Ts, typename ...Us> bool operator>=(sum<Ts...> const &, sum<Us...> const &);
 template<typename ...> struct deduce_return_type_impl;
-template<typename Union> struct is_tagged_union;
-template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend(Union &&);
-template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_left(Union &&);
-template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
+template<typename Union> struct is_sum;
+template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_sum<std::decay_t<Union>>{})> decltype(auto) extend(Union &&);
+template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_sum<std::decay_t<Union>>{})> decltype(auto) extend_left(Union &&);
+template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_sum<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
 template<typename, typename> struct extended_element_impl;
 template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
 template<std::size_t N> constexpr auto size_type_impl();
@@ -61,10 +61,10 @@ template<std::size_t N> using size_type = decltype(here::size_type_impl<N>());
 
 // implementations
 
-// tagged_union
+// sum
 template<typename ...Ts>
-class tagged_union {
-    template<typename T> using unfold = rec::unfold<tagged_union, T>;
+class sum {
+    template<typename T> using unfold = rec::unfold<sum, T>;
     using fallback_tag = typename find_fallback_type<0, unfold<Ts>...>::type;
 
 public:
@@ -73,8 +73,8 @@ public:
     static constexpr which_type elements_size = sizeof...(Ts);
 
 private:
-    template<std::size_t I> using stored = rec::stored<tagged_union, I, Ts...>;
-    template<std::size_t I> using element = rec::element<tagged_union, I, Ts...>;
+    template<std::size_t I> using stored = rec::stored<sum, I, Ts...>;
+    template<std::size_t I> using element = rec::element<sum, I, Ts...>;
 
     static constexpr which_type backup_mask = (which_type)~((which_type)~0 >> 1);
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
@@ -82,51 +82,51 @@ private:
 public:
 
     template<std::size_t I>
-    tagged_union(tag<I> t, element<I> const & x) : which_(t.value) {
+    sum(tag<I> t, element<I> const & x) : which_(t.value) {
         this->construct_directly(t, x);
     }
     template<std::size_t I>
-    tagged_union(tag<I> t, element<I> && x) : which_(t.value) {
+    sum(tag<I> t, element<I> && x) : which_(t.value) {
         this->construct_directly(t, std::move(x));
     }
     template<std::size_t I, typename ...Args,
              DESALT_DATATYPES_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
-    tagged_union(tag<I> t, Args && ...args) : which_(t.value) {
+    sum(tag<I> t, Args && ...args) : which_(t.value) {
         this->construct_directly(t, std::forward<Args>(args)...);
     }
-    tagged_union(tagged_union const & other) : which_(other.which()) {
+    sum(sum const & other) : which_(other.which()) {
         this->construct(other);
     }
-    tagged_union(tagged_union && other) : which_(other.which()) {
+    sum(sum && other) : which_(other.which()) {
         this->construct(std::move(other));
     }
     template<typename ...Us, DESALT_DATATYPES_REQUIRE(utils::all(std::is_constructible<Ts, Us>::value...))>
-    tagged_union(tagged_union<Us...> const & other) : which_(other.which()) {
+    sum(sum<Us...> const & other) : which_(other.which()) {
         this->construct(other);
     }
     template<typename ...Us, DESALT_DATATYPES_REQUIRE(utils::all(std::is_constructible<Ts, Us>::value...))>
-    tagged_union(tagged_union<Us...> && other) : which_(other.which()) {
+    sum(sum<Us...> && other) : which_(other.which()) {
         this->construct(std::move(other));
     }
-    ~tagged_union() {
+    ~sum() {
         destroy();
     }
 
-    tagged_union & operator=(tagged_union const & other) & {
+    sum & operator=(sum const & other) & {
         this->assign(other);
         return *this;
     }
-    tagged_union & operator=(tagged_union && other) & {
+    sum & operator=(sum && other) & {
         this->assign(std::move(other));
         return *this;
     }
     template<typename ...Us>
-    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), tagged_union &>::type operator=(tagged_union<Us...> const & other) & {
+    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), sum &>::type operator=(sum<Us...> const & other) & {
         this->assign(other);
         return *this;
     }
     template<typename ...Us>
-    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), tagged_union &>::type operator=(tagged_union<Us...> && other) & {
+    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), sum &>::type operator=(sum<Us...> && other) & {
         this->assign(std::move(other));
         return *this;
     }
@@ -358,12 +358,12 @@ private:
         });
     }
 
-    template<typename ...Ts1, typename ...Ts2> friend bool operator==(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
-    template<typename ...Ts1, typename ...Ts2> friend bool operator!=(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
-    template<typename ...Ts1, typename ...Ts2> friend bool operator<(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
-    template<typename ...Ts1, typename ...Ts2> friend bool operator>(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
-    template<typename ...Ts1, typename ...Ts2> friend bool operator<=(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
-    template<typename ...Ts1, typename ...Ts2> friend bool operator>=(tagged_union<Ts1...> const &, tagged_union<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator==(sum<Ts1...> const &, sum<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator!=(sum<Ts1...> const &, sum<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator<(sum<Ts1...> const &, sum<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator>(sum<Ts1...> const &, sum<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator<=(sum<Ts1...> const &, sum<Ts2...> const &);
+    template<typename ...Ts1, typename ...Ts2> friend bool operator>=(sum<Ts1...> const &, sum<Ts2...> const &);
 
     void set_which(which_type which) {
         which_ = which;
@@ -384,7 +384,7 @@ private:
 };
 
 template<typename ...Ts, typename ...Us>
-bool operator==(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
+bool operator==(sum<Ts...> const & a, sum<Us...> const & b) {
     static_assert(utils::all(utils::equality_comparable<rec::unwrap<Ts>, rec::unwrap<Us>>::value...), "each element type must be equality comparable.");
     if (a.which() != b.which()) return false;
     return a.dispatch([&] (auto t) -> bool {
@@ -392,11 +392,11 @@ bool operator==(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
         });
 }
 template<typename ...Ts, typename ...Us>
-bool operator!=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
+bool operator!=(sum<Ts...> const & a, sum<Us...> const & b) {
     return !(a == b);
 }
 template<typename ...Ts, typename ...Us>
-bool operator<(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
+bool operator<(sum<Ts...> const & a, sum<Us...> const & b) {
     static_assert(utils::all(utils::less_than_comparable<rec::unwrap<Ts>, rec::unwrap<Us>>::value...), "each element type must be less than comparable.");
     if (a.which() != b.which()) return a.which() < b.which();
     return a.dispatch([&] (auto t) -> bool {
@@ -404,15 +404,15 @@ bool operator<(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
         });
 }
 template<typename ...Ts, typename ...Us>
-bool operator>(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
+bool operator>(sum<Ts...> const & a, sum<Us...> const & b) {
     return b < a;
 }
 template<typename ...Ts, typename ...Us>
-bool operator<=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
+bool operator<=(sum<Ts...> const & a, sum<Us...> const & b) {
     return !(b < a);
 }
 template<typename ...Ts, typename ...Us>
-bool operator>=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
+bool operator>=(sum<Ts...> const & a, sum<Us...> const & b) {
     return !(a < b);
 }
 
@@ -455,7 +455,7 @@ struct find_fallback_type<I, T, Ts...>
 {};
 // Specialization for rec_guard types. Escape default constructibility inspection of rec_guard<T>.
 // Because `std::is_nothrow_default_constructible` may inspect default construtibility of `U` in instaciation of `U`,
-// where `U` is a `tagged_union<...>` contains `_`.
+// where `U` is a `sum<...>` contains `_`.
 // `rec_guard` allocates memory in any constructor. So this check may escape.
 template<std::size_t I, typename T, typename ...Ts>
 struct find_fallback_type<I, rec_guard<T>, Ts...>
@@ -482,7 +482,7 @@ struct deduce_return_type_impl<void> {
 };
 template<typename ...Ts>
 struct deduce_return_type_impl<void, Ts...> {
-    static_assert(std::is_same<deduce_return_type<Ts...>, void>{}, "failed to deduce return type in tagged_union::when or tagged_union::dispatch.");
+    static_assert(std::is_same<deduce_return_type<Ts...>, void>{}, "failed to deduce return type in sum::when or sum::dispatch.");
     using type = deduce_return_type<Ts...>;
 };
 template<typename T, typename ...Ts>
@@ -494,7 +494,7 @@ struct deduce_return_type_impl<T, Ts...> {
 template<typename ...Ts, typename Union, typename>
 decltype(auto) extend(Union && u) {
     return std::forward<Union>(u).when([&] (auto t, auto && x) {
-            return tagged_union<extended_element<std::decay_t<Union>, Ts>...>(extended_tag<t.value, Ts...>{}, std::forward<decltype(x)>(x));
+            return sum<extended_element<std::decay_t<Union>, Ts>...>(extended_tag<t.value, Ts...>{}, std::forward<decltype(x)>(x));
         });
 }
 
@@ -514,18 +514,18 @@ decltype(auto) extend_right(Union && u) {
     });
 }
 
-// is_tagged_union
-template<typename> struct is_tagged_union : std::false_type {};
-template<typename ...Ts> struct is_tagged_union<tagged_union<Ts...>> : std::true_type {};
+// is_sum
+template<typename> struct is_sum : std::false_type {};
+template<typename ...Ts> struct is_sum<sum<Ts...>> : std::true_type {};
 
 // extended_element_impl
 template<typename ...Ts, typename U>
-struct extended_element_impl<tagged_union<Ts...>, U>
+struct extended_element_impl<sum<Ts...>, U>
     : utils::id<U>
 {};
 template<typename ...Ts, std::size_t I>
-struct extended_element_impl<tagged_union<Ts...>, tag<I>>
-    : utils::id<rec::element<tagged_union<Ts...>, I, Ts...>>
+struct extended_element_impl<sum<Ts...>, tag<I>>
+    : utils::id<rec::element<sum<Ts...>, I, Ts...>>
 {};
 
 // extended_tag_impl
@@ -556,27 +556,27 @@ constexpr auto size_type_impl() {
     });
 }
 
-} // namespace tagged_union {
+} // namespace sum {
 } // namespace detail {
 
 namespace traits {
 
 template<typename ...Ts, template<typename> class Subst>
-struct substitute_recursion_placeholder<detail::tagged_union::tagged_union<Ts...>, Subst>
-    : detail::utils::id<detail::tagged_union::tagged_union<typename start_new_rec<Subst, Ts>::type...>>
+struct substitute_recursion_placeholder<detail::sum::sum<Ts...>, Subst>
+    : detail::utils::id<detail::sum::sum<typename start_new_rec<Subst, Ts>::type...>>
 {};
 
 template<typename ...Ts, template<typename> class Pred>
-struct need_rec_guard<detail::tagged_union::tagged_union<Ts...>, Pred>
+struct need_rec_guard<detail::sum::sum<Ts...>, Pred>
     : std::integral_constant<bool, !detail::utils::all(!start_new_rec<Pred, Ts>::value...)>
 {};
 
 } // namespace traits {
 
-using detail::tagged_union::tagged_union;
-using detail::tagged_union::extend;
-using detail::tagged_union::extend_left;
-using detail::tagged_union::extend_right;
+using detail::sum::sum;
+using detail::sum::extend;
+using detail::sum::extend_left;
+using detail::sum::extend_right;
 
 }} // namespace desalt { namespace datatypes {
 
