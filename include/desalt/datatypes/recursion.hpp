@@ -21,9 +21,13 @@ template<std::size_t, typename> struct need_rec_guard;
 template<std::size_t> struct rec;
 template<std::size_t I> bool operator==(rec<I>, rec<I>);
 template<std::size_t I> bool operator<(rec<I>, rec<I>);
+template<typename> struct unwrap_impl;
+template<typename> struct start_new_rec_impl;
 
 template<typename Union, typename T> using unfold = typename unfold_impl_1<Union, T>::type;
-template<typename> struct start_new_rec_impl;
+template<typename T> using unwrap = typename unwrap_impl<T>::type;
+template<typename Union, std::size_t I, typename ...Ts> using stored = utils::at<I, unfold<Union, Ts>...>;
+template<typename Union, std::size_t I, typename ...Ts> using element = unwrap<stored<Union, I, Ts...>>;
 template<template<typename> class Subst, typename T> using start_new_rec = start_new_rec_impl<Subst<T>>;
 
 // unfold_impl_1
@@ -101,6 +105,10 @@ struct rec {
     // using `rec` as a value is probably failed to be substituted.
     template<int I = 0> rec() { static_assert(I - I, "rec<I> is recursion placeholder. must not use as value."); }
 };
+
+// unwrap_impl
+template<typename T> struct unwrap_impl { using type = T; };
+template<typename T> struct unwrap_impl<rec_guard<T>> { using type = T; };
 
 // rec_guard
 template<typename T>

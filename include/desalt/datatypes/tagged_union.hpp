@@ -30,12 +30,12 @@ namespace here = detail;
 namespace tagged_union {
 namespace here = tagged_union;
 
-template<std::size_t I> struct tag;
+using utils::tag;
+
 template<typename ...> struct tagged_union;
 template<typename, typename> struct visitor_table;
 template<typename T> inline void destroy(T &);
 template<std::size_t, typename ...> struct find_fallback_type;
-template<typename> struct unwrap_impl;
 struct unexpected_case;
 struct bad_tag;
 template<typename ...Ts, typename ...Us> bool operator==(tagged_union<Ts...> const &, tagged_union<Us...> const &);
@@ -53,9 +53,6 @@ template<typename, typename> struct extended_element_impl;
 template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
 template<std::size_t N> constexpr auto size_type_impl();
 
-template<typename T> using unwrap = typename unwrap_impl<T>::type;
-template<typename Union, std::size_t I, typename ...Ts> using actual_element = utils::at<I, rec::unfold<Union, Ts>...>;
-template<typename Union, std::size_t I, typename ...Ts> using element = unwrap<actual_element<Union, I, Ts...>>;
 template<typename ...Ts> using deduce_return_type = typename deduce_return_type_impl<Ts...>::type;
 template<typename Union, typename T> using extended_element = typename extended_element_impl<Union, T>::type;
 template<std::size_t I, typename ...Ts> using extended_tag = typename extended_tag_impl<I, 0, Ts...>::type;
@@ -76,8 +73,8 @@ public:
     static constexpr which_type elements_size = sizeof...(Ts);
 
 private:
-    template<std::size_t I> using actual_element = here::actual_element<tagged_union, I, Ts...>;
-    template<std::size_t I> using element = here::element<tagged_union, I, Ts...>;
+    template<std::size_t I> using stored = rec::stored<tagged_union, I, Ts...>;
+    template<std::size_t I> using element = rec::element<tagged_union, I, Ts...>;
 
     static constexpr which_type backup_mask = (which_type)~((which_type)~0 >> 1);
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
@@ -177,69 +174,69 @@ public:
 
 private:
     template<std::size_t I, typename E = bad_tag>
-    actual_element<I> & get_impl(tag<I> t) {
+    stored<I> & get_impl(tag<I> t) {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
     template<std::size_t I, typename E = bad_tag>
-    actual_element<I> const & get_impl(tag<I> t) const {
+    stored<I> const & get_impl(tag<I> t) const {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
-    actual_element<I> & get_unchecked_impl(tag<I> t) {
+    stored<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
-    actual_element<I> & get_unchecked_impl(tag<I> t) {
+    stored<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
-    actual_element<I> const & get_unchecked_impl(tag<I> t) const {
+    stored<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
     template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
-    actual_element<I> const & get_unchecked_impl(tag<I> t) const {
+    stored<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
-    template<typename Tag, typename T = actual_element<Tag::value>>
+    template<typename Tag, typename T = stored<Tag::value>>
     T & get_typed(Tag) {
         return *reinterpret_cast<T*>(&storage_);
     }
-    template<typename Tag, typename T = actual_element<Tag::value>>
+    template<typename Tag, typename T = stored<Tag::value>>
     T const & get_typed(Tag) const {
         return *reinterpret_cast<T const *>(&storage_);
     }
-    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
+    template<typename Tag, typename T = stored<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
     T & get_backup(Tag) {
         return **reinterpret_cast<T**>(&storage_);
     }
-    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
+    template<typename Tag, typename T = stored<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
     T const & get_backup(Tag) const {
         return **reinterpret_cast<T * const *>(&storage_);
     }
 
     bool nothrow_copy_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_copy_constructible<actual_element<t.value>>::value;
+                return std::is_nothrow_copy_constructible<stored<t.value>>::value;
             });
     }
     bool nothrow_move_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_move_constructible<actual_element<t.value>>::value;
+                return std::is_nothrow_move_constructible<stored<t.value>>::value;
             });
     }
     template<typename Union>
     bool nothrow_constructible(Union && other) const {
         using value_type = typename std::decay<Union>::type;
         return other.dispatch([] (auto t) {
-                return std::is_nothrow_constructible<actual_element<t.value>, typename value_type::template actual_element<t.value>&&>::value;
+                return std::is_nothrow_constructible<stored<t.value>, typename value_type::template stored<t.value>&&>::value;
             });
     }
     template<typename Union>
@@ -250,7 +247,7 @@ private:
     }
     template<std::size_t I, typename ...Args>
     void construct_directly(tag<I> t, Args && ...args) {
-        new(&storage_) actual_element<t.value>(std::forward<Args>(args)...);
+        new(&storage_) stored<t.value>(std::forward<Args>(args)...);
     }
     void destroy() {
         this->dispatch([&] (auto t) {
@@ -313,8 +310,8 @@ private:
     template<typename Union>
     void construct_using_right_hand_move_constructor(Union const & other) {
         other.dispatch([&] (auto t) {
-                using other_actual_element = typename std::decay_t<Union>::template actual_element<t.value>;
-                other_actual_element tmp(other.get_unchecked(t));
+                using other_stored = typename std::decay_t<Union>::template stored<t.value>;
+                other_stored tmp(other.get_unchecked(t));
                 this->destroy();
                 this->construct_directly(t, std::move(tmp));
             });
@@ -322,7 +319,7 @@ private:
     template<typename Union>
     void construct_using_auto_storage_save(Union && other) {
         this->dispatch([&] (auto t) {
-                actual_element<t.value> tmp(std::move(this->get_unchecked(t)));
+                stored<t.value> tmp(std::move(this->get_unchecked(t)));
                 this->destroy(t);
                 try {
                     this->construct(std::forward<Union>(other));
@@ -348,7 +345,7 @@ private:
     template<typename Union>
     void construct_using_dynamic_storage_save(Union && other) {
         this->dispatch([&] (auto t) {
-            auto p = new actual_element<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
+            auto p = new stored<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
             try {
                 this->destroy(t);
                 this->construct(std::forward<Union>(other));
@@ -388,7 +385,7 @@ private:
 
 template<typename ...Ts, typename ...Us>
 bool operator==(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
-    static_assert(utils::all(utils::equality_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be equality comparable.");
+    static_assert(utils::all(utils::equality_comparable<rec::unwrap<Ts>, rec::unwrap<Us>>::value...), "each element type must be equality comparable.");
     if (a.which() != b.which()) return false;
     return a.dispatch([&] (auto t) -> bool {
             return a.get_unchecked(t) == b.get_unchecked(t);
@@ -400,7 +397,7 @@ bool operator!=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
 }
 template<typename ...Ts, typename ...Us>
 bool operator<(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
-    static_assert(utils::all(utils::less_than_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be less than comparable.");
+    static_assert(utils::all(utils::less_than_comparable<rec::unwrap<Ts>, rec::unwrap<Us>>::value...), "each element type must be less than comparable.");
     if (a.which() != b.which()) return a.which() < b.which();
     return a.dispatch([&] (auto t) -> bool {
             return a.get_unchecked(t) < b.get_unchecked(t);
@@ -465,18 +462,6 @@ struct find_fallback_type<I, rec_guard<T>, Ts...>
     : find_fallback_type<I+1, Ts...>
 {};
 
-// tag
-template<std::size_t I>
-struct tag
-    : std::integral_constant<std::size_t, I>
-{
-    using type = tag;
-};
-
-// unwrap_impl
-template<typename T> struct unwrap_impl { using type = T; };
-template<typename T> struct unwrap_impl<rec_guard<T>> { using type = T; };
-
 // unexpected_case
 struct unexpected_case : std::logic_error {
     unexpected_case() : logic_error("unexpected case") {}
@@ -540,7 +525,7 @@ struct extended_element_impl<tagged_union<Ts...>, U>
 {};
 template<typename ...Ts, std::size_t I>
 struct extended_element_impl<tagged_union<Ts...>, tag<I>>
-    : utils::id<element<tagged_union<Ts...>, I, Ts...>>
+    : utils::id<rec::element<tagged_union<Ts...>, I, Ts...>>
 {};
 
 // extended_tag_impl
@@ -589,22 +574,9 @@ struct need_rec_guard<detail::tagged_union::tagged_union<Ts...>, Pred>
 } // namespace traits {
 
 using detail::tagged_union::tagged_union;
-using detail::tagged_union::tag;
 using detail::tagged_union::extend;
 using detail::tagged_union::extend_left;
 using detail::tagged_union::extend_right;
-
-template<std::size_t N> constexpr tag<N> t{};
-constexpr tag<0> _0{};
-constexpr tag<1> _1{};
-constexpr tag<2> _2{};
-constexpr tag<3> _3{};
-constexpr tag<4> _4{};
-constexpr tag<5> _5{};
-constexpr tag<6> _6{};
-constexpr tag<7> _7{};
-constexpr tag<8> _8{};
-constexpr tag<9> _9{};
 
 }} // namespace desalt { namespace datatypes {
 

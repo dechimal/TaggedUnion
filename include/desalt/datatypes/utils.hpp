@@ -17,6 +17,7 @@ namespace here = detail;
 namespace utils {
 namespace here = utils;
 
+template<std::size_t I> struct tag;
 template<typename T> struct id;
 
 constexpr bool all();
@@ -56,6 +57,14 @@ template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 
 struct type_fun;
+
+// tag
+template<std::size_t I>
+struct tag
+    : std::integral_constant<std::size_t, I>
+{
+    using type = tag;
+};
 
 // with_index_sequence
 template<std::size_t N, typename F>
@@ -155,9 +164,22 @@ decltype(auto) fix_impl(F && f) {
 } // namespace utils {
 } // namespace detail {
 
+using detail::utils::tag;
 using detail::utils::tie;
 using detail::utils::fix;
 using detail::utils::type_fun;
+
+template<std::size_t N> constexpr tag<N> t{};
+constexpr tag<0> _0{};
+constexpr tag<1> _1{};
+constexpr tag<2> _2{};
+constexpr tag<3> _3{};
+constexpr tag<4> _4{};
+constexpr tag<5> _5{};
+constexpr tag<6> _6{};
+constexpr tag<7> _7{};
+constexpr tag<8> _8{};
+constexpr tag<9> _9{};
 
 }} // namespace desalt { namespace datatypes {
 
