@@ -2,22 +2,22 @@
 #include <tuple>
 #include <cassert>
 #include <vector>
-#include "desalt/tagged_union.hpp"
+#include "desalt/datatypes.hpp"
 
-using desalt::tagged_union::_0;
-using desalt::tagged_union::_1;
-using desalt::tagged_union::_2;
-using desalt::tagged_union::_3;
-using desalt::tagged_union::tagged_union;
-using desalt::tagged_union::rec_guard;
-using desalt::tagged_union::tag;
-using desalt::tagged_union::tie;
-using desalt::tagged_union::fix;
-using desalt::tagged_union::_;
-using desalt::tagged_union::rec;
-using desalt::tagged_union::type_fun;
-using desalt::tagged_union::extend;
-using desalt::tagged_union::extend_right;
+using desalt::datatypes::_0;
+using desalt::datatypes::_1;
+using desalt::datatypes::_2;
+using desalt::datatypes::_3;
+using desalt::datatypes::tagged_union;
+using desalt::datatypes::rec_guard;
+using desalt::datatypes::tag;
+using desalt::datatypes::tie;
+using desalt::datatypes::fix;
+using desalt::datatypes::_;
+using desalt::datatypes::rec;
+using desalt::datatypes::type_fun;
+using desalt::datatypes::extend;
+using desalt::datatypes::extend_right;
 
 struct hoge {
     hoge(int x) : x(x) {}

@@ -1,5 +1,5 @@
-#if !defined DESALT_TAGGED_UNION_UTILS_HPP_INCLUDED_
-#define      DESALT_TAGGED_UNION_UTILS_HPP_INCLUDED_
+#if !defined DESALT_DATATYPES_UTILS_HPP_INCLUDED_
+#define      DESALT_DATATYPES_UTILS_HPP_INCLUDED_
 
 #include <utility>
 #include <type_traits>
@@ -7,13 +7,15 @@
 #include <initializer_list>
 #include <tuple>
 
-#define DESALT_TAGGED_UNION_REQUIRE(...) typename = typename std::enable_if<(__VA_ARGS__)>::type
-#define DESALT_TAGGED_UNION_VALID_EXPR(...) typename = decltype((__VA_ARGS__), (void)0)
+#define DESALT_DATATYPES_REQUIRE(...) typename = typename std::enable_if<(__VA_ARGS__)>::type
+#define DESALT_DATATYPES_VALID_EXPR(...) typename = decltype((__VA_ARGS__), (void)0)
 
-namespace desalt { namespace tagged_union {
+namespace desalt { namespace datatypes {
 
 namespace detail {
 namespace here = detail;
+namespace utils {
+namespace here = utils;
 
 template<typename T> struct id;
 
@@ -22,16 +24,27 @@ template<typename T, typename ...Ts> constexpr bool all(T, Ts...);
 
 template<std::size_t, typename ...> struct at_impl;
 
-template<typename F, typename ...Ts, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> constexpr std::true_type callable_with_test(int);
+template<typename F, typename ...Ts, DESALT_DATATYPES_VALID_EXPR(std::declval<F>()(std::declval<Ts>()...))> constexpr std::true_type callable_with_test(int);
 template<typename ...> constexpr std::false_type callable_with_test(...);
 template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
+
+template<typename T, typename U, DESALT_DATATYPES_VALID_EXPR(std::declval<T>() == std::declval<U>())> std::true_type equality_comparable_test(int);
+template<typename, typename> std::false_type equality_comparable_test(...);
+template<typename T, typename U, DESALT_DATATYPES_VALID_EXPR(std::declval<T>() < std::declval<U>()), typename = void> std::true_type less_than_comparable_test(int);
+template<typename, typename> std::false_type less_than_comparable_test(...);
+
+template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
+template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
+template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
+
+template<typename T> T declval();
 
 template<typename F> decltype(auto) fix(F &&);
 template<std::size_t, typename F> decltype(auto) fix_impl(F &&);
 
 struct make_dependency;
-template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(callable_with<F, make_dependency>{})> constexpr decltype(auto) static_if(F, Fs ...);
-template<typename F, typename ...Fs, DESALT_TAGGED_UNION_REQUIRE(!callable_with<F, make_dependency>{}), typename = void> constexpr decltype(auto) static_if(F, Fs ...);
+template<typename F, typename ...Fs, DESALT_DATATYPES_REQUIRE(callable_with<F, make_dependency>{})> constexpr decltype(auto) static_if(F, Fs ...);
+template<typename F, typename ...Fs, DESALT_DATATYPES_REQUIRE(!callable_with<F, make_dependency>{}), typename = void> constexpr decltype(auto) static_if(F, Fs ...);
 constexpr void static_if();
 
 template<std::size_t, typename F> constexpr decltype(auto) with_index_sequence(F);
@@ -113,7 +126,7 @@ struct tie_t {
         return i;
     }
 
-    template<typename ...Args, std::size_t Index = find_first_set({callable_with<Fs, Args && ...>::value...}), DESALT_TAGGED_UNION_REQUIRE(Index != sizeof...(Fs))>
+    template<typename ...Args, std::size_t Index = find_first_set({callable_with<Fs, Args && ...>::value...}), DESALT_DATATYPES_REQUIRE(Index != sizeof...(Fs))>
     decltype(auto) operator()(Args && ...args) const {
         return std::get<Index>(fs)(std::forward<Args>(args)...);
     }
@@ -139,12 +152,13 @@ decltype(auto) fix_impl(F && f) {
         };
 }
 
+} // namespace utils {
 } // namespace detail {
 
-using detail::tie;
-using detail::fix;
-using detail::type_fun;
+using detail::utils::tie;
+using detail::utils::fix;
+using detail::utils::type_fun;
 
-}} // namespace desalt { namespace tagged_union {
+}} // namespace desalt { namespace datatypes {
 
-#endif // DESALT_TAGGED_UNION_UTILS_HPP_INCLUDED_
+#endif

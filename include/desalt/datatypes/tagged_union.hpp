@@ -1,5 +1,5 @@
-#if !defined DESALT_TAGGED_UNION_TAGGED_UNION_HPP_INCLUDED_
-#define      DESALT_TAGGED_UNION_TAGGED_UNION_HPP_INCLUDED_
+#if !defined DESALT_DATATYPES_TAGGED_UNION_HPP_INCLUDED_
+#define      DESALT_DATATYPES_TAGGED_UNION_HPP_INCLUDED_
 
 #include <type_traits>
 #include <utility>
@@ -8,8 +8,8 @@
 #include <limits>
 #include <cstdint>
 #include <array>
-#include <desalt/tagged_union/utils.hpp>
-#include <desalt/tagged_union/recursion.hpp>
+#include <desalt/datatypes/utils.hpp>
+#include <desalt/datatypes/recursion.hpp>
 
 #if defined __GNUC__
     #pragma GCC diagnostic push
@@ -22,20 +22,19 @@
     #endif
 #endif
 
-namespace desalt { namespace tagged_union {
+namespace desalt { namespace datatypes {
 
 namespace detail {
 namespace here = detail;
+
+namespace tagged_union {
+namespace here = tagged_union;
 
 template<std::size_t I> struct tag;
 template<typename ...> struct tagged_union;
 template<typename, typename> struct visitor_table;
 template<typename T> inline void destroy(T &);
 template<std::size_t, typename ...> struct find_fallback_type;
-template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() == std::declval<U>())> std::true_type equality_comparable_test(int);
-template<typename, typename> std::false_type equality_comparable_test(...);
-template<typename T, typename U, DESALT_TAGGED_UNION_VALID_EXPR(std::declval<T>() < std::declval<U>()), typename = void> std::true_type less_than_comparable_test(int);
-template<typename, typename> std::false_type less_than_comparable_test(...);
 template<typename> struct unwrap_impl;
 struct unexpected_case;
 struct bad_tag;
@@ -46,25 +45,21 @@ template<typename ...Ts, typename ...Us> bool operator>(tagged_union<Ts...> cons
 template<typename ...Ts, typename ...Us> bool operator<=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator>=(tagged_union<Ts...> const &, tagged_union<Us...> const &);
 template<typename ...> struct deduce_return_type_impl;
-template<typename T> T declval();
 template<typename Union> struct is_tagged_union;
-template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend(Union &&);
-template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_left(Union &&);
-template<typename ..., typename Union, DESALT_TAGGED_UNION_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
+template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend(Union &&);
+template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_left(Union &&);
+template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_tagged_union<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
 template<typename, typename> struct extended_element_impl;
 template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
 template<std::size_t N> constexpr auto size_type_impl();
 
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
-template<typename T, typename U> using equality_comparable = decltype(here::equality_comparable_test<T, U>(0));
-template<typename T, typename U> using less_than_comparable = decltype(here::less_than_comparable_test<T, U>(0));
-template<typename F, typename ...Ts> using callable_with = decltype(here::callable_with_test<F, Ts...>(0));
-template<typename Union, std::size_t I, typename ...Ts> using actual_element = at<I, unfold<Union, Ts>...>;
+template<typename Union, std::size_t I, typename ...Ts> using actual_element = utils::at<I, rec::unfold<Union, Ts>...>;
 template<typename Union, std::size_t I, typename ...Ts> using element = unwrap<actual_element<Union, I, Ts...>>;
 template<typename ...Ts> using deduce_return_type = typename deduce_return_type_impl<Ts...>::type;
 template<typename Union, typename T> using extended_element = typename extended_element_impl<Union, T>::type;
 template<std::size_t I, typename ...Ts> using extended_tag = typename extended_tag_impl<I, 0, Ts...>::type;
-template<std::size_t N> using size_type = decltype(size_type_impl<N>());
+template<std::size_t N> using size_type = decltype(here::size_type_impl<N>());
 
 
 // implementations
@@ -72,7 +67,7 @@ template<std::size_t N> using size_type = decltype(size_type_impl<N>());
 // tagged_union
 template<typename ...Ts>
 class tagged_union {
-    template<typename T> using unfold = here::unfold<tagged_union, T>;
+    template<typename T> using unfold = rec::unfold<tagged_union, T>;
     using fallback_tag = typename find_fallback_type<0, unfold<Ts>...>::type;
 
 public:
@@ -98,7 +93,7 @@ public:
         this->construct_directly(t, std::move(x));
     }
     template<std::size_t I, typename ...Args,
-             DESALT_TAGGED_UNION_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
+             DESALT_DATATYPES_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
     tagged_union(tag<I> t, Args && ...args) : which_(t.value) {
         this->construct_directly(t, std::forward<Args>(args)...);
     }
@@ -108,11 +103,11 @@ public:
     tagged_union(tagged_union && other) : which_(other.which()) {
         this->construct(std::move(other));
     }
-    template<typename ...Us, DESALT_TAGGED_UNION_REQUIRE(here::all(std::is_constructible<Ts, Us>::value...))>
+    template<typename ...Us, DESALT_DATATYPES_REQUIRE(utils::all(std::is_constructible<Ts, Us>::value...))>
     tagged_union(tagged_union<Us...> const & other) : which_(other.which()) {
         this->construct(other);
     }
-    template<typename ...Us, DESALT_TAGGED_UNION_REQUIRE(here::all(std::is_constructible<Ts, Us>::value...))>
+    template<typename ...Us, DESALT_DATATYPES_REQUIRE(utils::all(std::is_constructible<Ts, Us>::value...))>
     tagged_union(tagged_union<Us...> && other) : which_(other.which()) {
         this->construct(std::move(other));
     }
@@ -129,12 +124,12 @@ public:
         return *this;
     }
     template<typename ...Us>
-    typename std::enable_if<here::all(std::is_assignable<Ts, Us>::value...), tagged_union &>::type operator=(tagged_union<Us...> const & other) & {
+    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), tagged_union &>::type operator=(tagged_union<Us...> const & other) & {
         this->assign(other);
         return *this;
     }
     template<typename ...Us>
-    typename std::enable_if<here::all(std::is_assignable<Ts, Us>::value...), tagged_union &>::type operator=(tagged_union<Us...> && other) & {
+    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), tagged_union &>::type operator=(tagged_union<Us...> && other) & {
         this->assign(std::move(other));
         return *this;
     }
@@ -163,7 +158,7 @@ public:
     }
     template<typename ...Fs>
     decltype(auto) dispatch(Fs ...fs) const {
-        return dispatch(here::tie(std::move(fs)...));
+        return dispatch(utils::tie(std::move(fs)...));
     }
 
     // the result type is
@@ -175,10 +170,10 @@ public:
     template<typename F> decltype(auto) when(F f) const  & { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
     template<typename F> decltype(auto) when(F f)       && { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
     template<typename F> decltype(auto) when(F f) const && { return this->dispatch([&] (auto t) -> decltype(auto) { return f(t, this->get_unchecked(t)); }); }
-    template<typename ...Fs> decltype(auto) when(Fs ...fs)        & { return when(here::tie(std::move(fs)...)); }
-    template<typename ...Fs> decltype(auto) when(Fs ...fs) const  & { return when(here::tie(std::move(fs)...)); }
-    template<typename ...Fs> decltype(auto) when(Fs ...fs)       && { return when(here::tie(std::move(fs)...)); }
-    template<typename ...Fs> decltype(auto) when(Fs ...fs) const && { return when(here::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs)        & { return when(utils::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs) const  & { return when(utils::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs)       && { return when(utils::tie(std::move(fs)...)); }
+    template<typename ...Fs> decltype(auto) when(Fs ...fs) const && { return when(utils::tie(std::move(fs)...)); }
 
 private:
     template<std::size_t I, typename E = bad_tag>
@@ -191,23 +186,23 @@ private:
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
+    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
     actual_element<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
+    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
     actual_element<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
+    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
     actual_element<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
+    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
     actual_element<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!backedup()) return get_typed(t);
@@ -221,11 +216,11 @@ private:
     T const & get_typed(Tag) const {
         return *reinterpret_cast<T const *>(&storage_);
     }
-    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond)>
+    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
     T & get_backup(Tag) {
         return **reinterpret_cast<T**>(&storage_);
     }
-    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond)>
+    template<typename Tag, typename T = actual_element<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
     T const & get_backup(Tag) const {
         return **reinterpret_cast<T * const *>(&storage_);
     }
@@ -262,11 +257,11 @@ private:
                 this->destroy(t);
             });
     }
-    template<typename Tag, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(cond)>
+    template<typename Tag, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
     void destroy(Tag t) {
         here::destroy(get_typed(t));
     }
-    template<typename Tag, bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond), typename = void>
+    template<typename Tag, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
     void destroy(Tag t) {
         if (backedup()) delete &get_backup(t);
         else here::destroy(get_typed(t));
@@ -280,7 +275,7 @@ private:
             if (this->nothrow_constructible(std::forward<Union>(other))) {
                 this->construct_using_nothrow_constructor(std::forward<Union>(other));
             } else {
-                auto fallback = here::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(std::is_lvalue_reference<Union&&>::value)> * = {}) {
+                auto fallback = utils::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(std::is_lvalue_reference<Union&&>::value)> * = {}) {
                     bool nothrow_move_constructible = other.nothrow_move_constructible();
                     if (nothrow_move_constructible) {
                         this->construct_using_right_hand_move_constructor(other);
@@ -293,7 +288,7 @@ private:
                     if (this->nothrow_move_constructible()) {
                         this->construct_using_auto_storage_save(std::forward<Union>(other));
                     } else {
-                        here::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(enable_fallback)> * = {}) {
+                        utils::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(enable_fallback)> * = {}) {
                             this->construct_using_fallback_type(std::forward<Union>(other));
                         }, [&] (auto) {
                             this->construct_using_dynamic_storage_save(std::forward<Union>(other));
@@ -376,11 +371,11 @@ private:
     void set_which(which_type which) {
         which_ = which;
     }
-    template<bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond)>
+    template<bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
     bool backedup() const {
         return (which_ & backup_mask) != 0;
     }
-    template<bool cond = enable_fallback, DESALT_TAGGED_UNION_REQUIRE(!cond)>
+    template<bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
     void mark_as_backup() {
         which_ |= backup_mask;
     }
@@ -393,7 +388,7 @@ private:
 
 template<typename ...Ts, typename ...Us>
 bool operator==(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
-    static_assert(here::all(equality_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be equality comparable.");
+    static_assert(utils::all(utils::equality_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be equality comparable.");
     if (a.which() != b.which()) return false;
     return a.dispatch([&] (auto t) -> bool {
             return a.get_unchecked(t) == b.get_unchecked(t);
@@ -405,7 +400,7 @@ bool operator!=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
 }
 template<typename ...Ts, typename ...Us>
 bool operator<(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
-    static_assert(here::all(less_than_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be less than comparable.");
+    static_assert(utils::all(utils::less_than_comparable<unwrap<Ts>, unwrap<Us>>::value...), "each element type must be less than comparable.");
     if (a.which() != b.which()) return a.which() < b.which();
     return a.dispatch([&] (auto t) -> bool {
             return a.get_unchecked(t) < b.get_unchecked(t);
@@ -427,18 +422,18 @@ bool operator>=(tagged_union<Ts...> const & a, tagged_union<Us...> const & b) {
 // visitor_table
 template<typename F, std::size_t ...Is>
 struct visitor_table<F, std::index_sequence<Is...>> {
-    using result_type = deduce_return_type<decltype(here::declval<F &>()(tag<Is>{}))...>;
+    using result_type = deduce_return_type<decltype(utils::declval<F &>()(tag<Is>{}))...>;
     using visitor_type = result_type(*)(F &);
     template<std::size_t I>
     static result_type visit(F & f) {
         return convert<0, I, Is...>(f);
     }
-    template<std::size_t K, std::size_t I, std::size_t J, std::size_t ...Js, DESALT_TAGGED_UNION_REQUIRE(K != I)>
-    static deduce_return_type<decltype(here::declval<F &>()(tag<J>{})), decltype(here::declval<F &>()(tag<Js>{}))...> convert(F & f) {
+    template<std::size_t K, std::size_t I, std::size_t J, std::size_t ...Js, DESALT_DATATYPES_REQUIRE(K != I)>
+    static deduce_return_type<decltype(utils::declval<F &>()(tag<J>{})), decltype(utils::declval<F &>()(tag<Js>{}))...> convert(F & f) {
         return convert<K+1, I, Js...>(f);
     }
-    template<std::size_t K, std::size_t I, std::size_t ...Js, DESALT_TAGGED_UNION_REQUIRE(K == I), typename = void>
-    static deduce_return_type<decltype(here::declval<F &>()(tag<Js>{}))...> convert(F & f) {
+    template<std::size_t K, std::size_t I, std::size_t ...Js, DESALT_DATATYPES_REQUIRE(K == I), typename = void>
+    static deduce_return_type<decltype(utils::declval<F &>()(tag<Js>{}))...> convert(F & f) {
         return f(tag<I>{});
     }
     static constexpr visitor_type table[sizeof...(Is)]{ &visit<Is>... };
@@ -475,7 +470,7 @@ template<std::size_t I>
 struct tag
     : std::integral_constant<std::size_t, I>
 {
-    using type = tag<I>;
+    using type = tag;
 };
 
 // unwrap_impl
@@ -507,7 +502,7 @@ struct deduce_return_type_impl<void, Ts...> {
 };
 template<typename T, typename ...Ts>
 struct deduce_return_type_impl<T, Ts...> {
-    using type = decltype(true ? here::declval<T>() : here::declval<deduce_return_type<Ts...>>());
+    using type = decltype(true ? utils::declval<T>() : utils::declval<deduce_return_type<Ts...>>());
 };
 
 // extend
@@ -521,7 +516,7 @@ decltype(auto) extend(Union && u) {
 // extend_left
 template<typename ...Ts, typename Union, typename>
 decltype(auto) extend_left(Union && u) {
-    return here::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
+    return utils::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
         return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
     });
 }
@@ -529,7 +524,7 @@ decltype(auto) extend_left(Union && u) {
 // extend_right
 template<typename ...Ts, typename Union, typename>
 decltype(auto) extend_right(Union && u) {
-    return here::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
+    return utils::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
         return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
     });
 }
@@ -541,21 +536,21 @@ template<typename ...Ts> struct is_tagged_union<tagged_union<Ts...>> : std::true
 // extended_element_impl
 template<typename ...Ts, typename U>
 struct extended_element_impl<tagged_union<Ts...>, U>
-    : id<U>
+    : utils::id<U>
 {};
 template<typename ...Ts, std::size_t I>
 struct extended_element_impl<tagged_union<Ts...>, tag<I>>
-    : id<element<tagged_union<Ts...>, I, Ts...>>
+    : utils::id<element<tagged_union<Ts...>, I, Ts...>>
 {};
 
 // extended_tag_impl
 template<std::size_t I, std::size_t Res, typename ...Ts>
 struct extended_tag_impl<I, Res, tag<I>, Ts...>
-    : id<tag<Res>>
+    : utils::id<tag<Res>>
 {};
 template<std::size_t I, std::size_t Res>
 struct extended_tag_impl<I, Res>
-    : id<tag<Res>>
+    : utils::id<tag<Res>>
 {};
 template<std::size_t I, std::size_t Res, typename T, typename ...Ts>
 struct extended_tag_impl<I, Res, T, Ts...>
@@ -565,7 +560,7 @@ struct extended_tag_impl<I, Res, T, Ts...>
 // size_type_impl
 template<std::size_t N>
 constexpr auto size_type_impl() {
-    return here::static_if([] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least8_t>::max())> * = {}) {
+    return utils::static_if([] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least8_t>::max())> * = {}) {
         return (std::uint_least8_t)0;
     }, [] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least16_t>::max())> * = {}) {
         return (std::uint_least16_t)0;
@@ -576,30 +571,28 @@ constexpr auto size_type_impl() {
     });
 }
 
-#undef DESALT_TAGGED_UNION_REQUIRE
-#undef DESALT_TAGGED_VALID_EXPR
-
+} // namespace tagged_union {
 } // namespace detail {
 
 namespace traits {
 
 template<typename ...Ts, template<typename> class Subst>
-struct substitute_recursion_placeholder<detail::tagged_union<Ts...>, Subst>
-    : detail::id<detail::tagged_union<typename start_new_rec<Subst, Ts>::type...>>
+struct substitute_recursion_placeholder<detail::tagged_union::tagged_union<Ts...>, Subst>
+    : detail::utils::id<detail::tagged_union::tagged_union<typename start_new_rec<Subst, Ts>::type...>>
 {};
 
 template<typename ...Ts, template<typename> class Pred>
-struct need_rec_guard<detail::tagged_union<Ts...>, Pred>
-    : std::integral_constant<bool, !detail::all(!start_new_rec<Pred, Ts>::value...)>
+struct need_rec_guard<detail::tagged_union::tagged_union<Ts...>, Pred>
+    : std::integral_constant<bool, !detail::utils::all(!start_new_rec<Pred, Ts>::value...)>
 {};
 
 } // namespace traits {
 
-using detail::tagged_union;
-using detail::tag;
-using detail::extend;
-using detail::extend_left;
-using detail::extend_right;
+using detail::tagged_union::tagged_union;
+using detail::tagged_union::tag;
+using detail::tagged_union::extend;
+using detail::tagged_union::extend_left;
+using detail::tagged_union::extend_right;
 
 template<std::size_t N> constexpr tag<N> t{};
 constexpr tag<0> _0{};
@@ -613,7 +606,7 @@ constexpr tag<7> _7{};
 constexpr tag<8> _8{};
 constexpr tag<9> _9{};
 
-}} // namespace desalt { namespace tagged_union {
+}} // namespace desalt { namespace datatypes {
 
 #if defined __GNUC__ || __clang__
     #pragma GCC diagnostic pop
