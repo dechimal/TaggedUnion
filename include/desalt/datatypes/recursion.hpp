@@ -14,6 +14,8 @@ template<typename, template<typename> class, typename = void> struct substitute_
 namespace detail {
 namespace rec {
 
+using utils::id;
+
 template<typename> struct rec_guard;
 template<typename, typename> struct unfold_impl_1;
 template<typename, std::size_t, typename> struct unfold_impl_2;
@@ -26,8 +28,9 @@ template<typename> struct start_new_rec_impl;
 
 template<typename Union, typename T> using unfold = typename unfold_impl_1<Union, T>::type;
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
-template<typename Union, std::size_t I, typename ...Ts> using stored = utils::at<I, unfold<Union, Ts>...>;
-template<typename Union, std::size_t I, typename ...Ts> using element = unwrap<stored<Union, I, Ts...>>;
+template<typename Union, typename T> using element = unwrap<unfold<Union, T>>;
+template<typename Union, std::size_t I, typename ...Ts> using nth_unfold = unfold<Union, utils::at<I, Ts...>>;
+template<typename Union, std::size_t I, typename ...Ts> using nth_element = unwrap<nth_unfold<Union, I, Ts...>>;
 template<template<typename> class Subst, typename T> using start_new_rec = start_new_rec_impl<Subst<T>>;
 
 // unfold_impl_1
@@ -39,7 +42,7 @@ struct unfold_impl_1 {
 };
 template<typename Self, typename T>
 struct unfold_impl_1<Self, rec_guard<T>>
-    : utils::id<rec_guard<typename unfold_impl_2<Self, 0, T>::type>>
+    : id<rec_guard<typename unfold_impl_2<Self, 0, T>::type>>
 {};
 
 // unfold_impl_2
@@ -48,27 +51,27 @@ struct unfold_impl_2 {
     template<typename U> using apply = unfold_impl_2<Union, I, U>;
     using type = typename traits::substitute_recursion_placeholder<T, apply>::type;
 };
-template<typename Union, std::size_t I> struct unfold_impl_2<Union, I, rec<I>> : utils::id<Union> {};
-template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T*> : utils::id<typename unfold_impl_2<Union, I, T>::type*> {};
-template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&> : utils::id<typename unfold_impl_2<Union, I, T>::type&> {};
-template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&&> : utils::id<typename unfold_impl_2<Union, I, T>::type&&> {};
-template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T const> : utils::id<typename unfold_impl_2<Union, I, T>::type const> {};
-template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T volatile> : utils::id<typename unfold_impl_2<Union, I, T>::type volatile> {};
-template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T const volatile> : utils::id<typename unfold_impl_2<Union, I, T>::type const volatile> {};
-template<typename Union, std::size_t I, typename T, std::size_t N> struct unfold_impl_2<Union, I, T[N]> : utils::id<typename unfold_impl_2<Union, I, T>::type[N]> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...)> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...)> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) &> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) &> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const &> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const &> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile &> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile &> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile &> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile &> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) &&> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) &&> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const &&> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const &&> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile &&> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile &&> {};
-template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile &&> : utils::id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile &&> {};
-template<typename Union, std::size_t I, typename T, typename C> struct unfold_impl_2<Union, I, T (C::*)> : utils::id<typename unfold_impl_2<Union, I, T>::type(unfold_impl_2<Union, I, C>::type::*)> {};
+template<typename Union, std::size_t I> struct unfold_impl_2<Union, I, rec<I>> : id<Union> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T*> : id<typename unfold_impl_2<Union, I, T>::type*> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&> : id<typename unfold_impl_2<Union, I, T>::type&> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&&> : id<typename unfold_impl_2<Union, I, T>::type&&> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T const> : id<typename unfold_impl_2<Union, I, T>::type const> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T volatile> : id<typename unfold_impl_2<Union, I, T>::type volatile> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T const volatile> : id<typename unfold_impl_2<Union, I, T>::type const volatile> {};
+template<typename Union, std::size_t I, typename T, std::size_t N> struct unfold_impl_2<Union, I, T[N]> : id<typename unfold_impl_2<Union, I, T>::type[N]> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...)> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...)> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) &> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) &> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const &> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const &> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile &> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile &> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile &> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile &> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) &&> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) &&> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const &&> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const &&> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) volatile &&> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) volatile &&> {};
+template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile &&> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile &&> {};
+template<typename Union, std::size_t I, typename T, typename C> struct unfold_impl_2<Union, I, T (C::*)> : id<typename unfold_impl_2<Union, I, T>::type(unfold_impl_2<Union, I, C>::type::*)> {};
 
 // start_new_rec_impl
 template<typename Union, std::size_t I, typename T>

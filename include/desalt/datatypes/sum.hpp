@@ -73,8 +73,8 @@ public:
     static constexpr which_type elements_size = sizeof...(Ts);
 
 private:
-    template<std::size_t I> using stored = rec::stored<sum, I, Ts...>;
-    template<std::size_t I> using element = rec::element<sum, I, Ts...>;
+    template<std::size_t I> using stored = rec::nth_unfold<sum, I, Ts...>;
+    template<std::size_t I> using element = rec::nth_element<sum, I, Ts...>;
 
     static constexpr which_type backup_mask = (which_type)~((which_type)~0 >> 1);
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
@@ -525,7 +525,7 @@ struct extended_element_impl<sum<Ts...>, U>
 {};
 template<typename ...Ts, std::size_t I>
 struct extended_element_impl<sum<Ts...>, tag<I>>
-    : utils::id<rec::element<sum<Ts...>, I, Ts...>>
+    : utils::id<rec::nth_element<sum<Ts...>, I, Ts...>>
 {};
 
 // extended_tag_impl
