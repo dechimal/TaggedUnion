@@ -118,8 +118,8 @@ template<typename T>
 struct rec_guard {
     template<typename ...Args>
     explicit rec_guard(Args && ...args) : p(new T(std::forward<Args>(args)...)) {}
-    explicit rec_guard(rec_guard const & other) : rec_guard(*other.p) {}
-    explicit rec_guard(rec_guard && other) noexcept : p(other.p) {
+    rec_guard(rec_guard const & other) : rec_guard(*other.p) {}
+    rec_guard(rec_guard && other) noexcept : p(other.p) {
         other.p = nullptr;
     }
     ~rec_guard() { delete p; }
