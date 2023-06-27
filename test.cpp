@@ -1,7 +1,9 @@
 
-#include <tuple>
+#include <array>
 #include <cassert>
+#include <tuple>
 #include <vector>
+
 #include "desalt/datatypes.hpp"
 
 using desalt::datatypes::_0;
