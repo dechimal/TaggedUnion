@@ -31,6 +31,7 @@ int main() {
         assert(v1.get(_1) == 2);
     }
     {
+        // with recursion
         struct u {};
         using state = sum<u, int>;
         using stream = product<int, std::function<_()>>;
