@@ -1,8 +1,9 @@
 #if !defined DESALT_DATATYPES_RECURSION_HPP_
 #define      DESALT_DATATYPES_RECURSION_HPP_
+
 #include <desalt/datatypes/utils.hpp>
 
-namespace desalt { namespace datatypes {
+namespace desalt::datatypes {
 
 namespace traits {
 
@@ -11,8 +12,7 @@ template<typename, template<typename> class, typename = void> struct substitute_
 
 }
 
-namespace detail {
-namespace rec {
+namespace detail::rec {
 
 using utils::id;
 
@@ -110,8 +110,8 @@ struct rec {
 };
 
 // unwrap_impl
-template<typename T> struct unwrap_impl { using type = T; };
-template<typename T> struct unwrap_impl<rec_guard<T>> { using type = T; };
+template<typename T> struct unwrap_impl : utils::id<T> {};
+template<typename T> struct unwrap_impl<rec_guard<T>> : utils::id<T> {};
 
 // rec_guard
 template<typename T>
@@ -140,8 +140,7 @@ private:
     T * p;
 };
 
-} // namespace rec {
-} // namespace detail {
+} // namespace detail::rec {
 
 namespace traits {
 
@@ -156,7 +155,7 @@ struct need_rec_guard<std::pair<T, U>, Pred>
 
 template<typename ...Ts, template<typename> class Pred>
 struct need_rec_guard<std::tuple<Ts...>, Pred>
-    : std::integral_constant<bool, !detail::utils::all(!Pred<Ts>::value...)>
+    : std::integral_constant<bool, !(!Pred<Ts>::value && ...)>
 {};
 
 template<typename T, std::size_t N, template<typename> class Pred>
@@ -188,6 +187,6 @@ using detail::rec::start_new_rec;
 using detail::rec::rec;
 using _ = rec<0>;
 
-}} // namespace desalt { namespace datatypes {
+} // namespace desalt::datatypes {
 
 #endif

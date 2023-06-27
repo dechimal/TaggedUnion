@@ -4,10 +4,9 @@
 #include <type_traits>
 #include <utility>
 #include <stdexcept>
-#include <tuple>
 #include <limits>
 #include <cstdint>
-#include <array>
+#include <concepts>
 #include <desalt/datatypes/utils.hpp>
 #include <desalt/datatypes/recursion.hpp>
 
@@ -22,7 +21,7 @@
     #endif
 #endif
 
-namespace desalt { namespace datatypes {
+namespace desalt::datatypes {
 
 namespace detail {
 namespace here = detail;
@@ -45,10 +44,12 @@ template<typename ...Ts, typename ...Us> bool operator>(sum<Ts...> const &, sum<
 template<typename ...Ts, typename ...Us> bool operator<=(sum<Ts...> const &, sum<Us...> const &);
 template<typename ...Ts, typename ...Us> bool operator>=(sum<Ts...> const &, sum<Us...> const &);
 template<typename ...> struct deduce_return_type_impl;
-template<typename Union> struct is_sum;
-template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_sum<std::decay_t<Union>>{})> decltype(auto) extend(Union &&);
-template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_sum<std::decay_t<Union>>{})> decltype(auto) extend_left(Union &&);
-template<typename ..., typename Union, DESALT_DATATYPES_REQUIRE(is_sum<std::decay_t<Union>>{})> decltype(auto) extend_right(Union &&);
+template<typename> struct is_sum_impl;
+template<typename Union> inline constexpr bool is_sum_impl_v = is_sum_impl<Union>::value;
+template<typename Union> concept is_sum = is_sum_impl_v<Union>;
+template<typename ..., typename Union> requires is_sum<std::decay_t<Union>> decltype(auto) extend(Union &&);
+template<typename ..., typename Union> requires is_sum<std::decay_t<Union>> decltype(auto) extend_left(Union &&);
+template<typename ..., typename Union> requires is_sum<std::decay_t<Union>> decltype(auto) extend_right(Union &&);
 template<typename, typename> struct extended_element_impl;
 template<std::size_t, std::size_t, typename ...> struct extended_tag_impl;
 template<std::size_t N> constexpr auto size_type_impl();
@@ -89,8 +90,8 @@ public:
     sum(tag<I> t, element<I> && x) : which_(t.value) {
         this->construct_directly(t, std::move(x));
     }
-    template<std::size_t I, typename ...Args,
-             DESALT_DATATYPES_REQUIRE(std::is_constructible<element<I>, Args &&...>::value)>
+    template<std::size_t I, typename ...Args>
+        requires std::constructible_from<element<I>, Args && ...>
     sum(tag<I> t, Args && ...args) : which_(t.value) {
         this->construct_directly(t, std::forward<Args>(args)...);
     }
@@ -100,11 +101,13 @@ public:
     sum(sum && other) : which_(other.which()) {
         this->construct(std::move(other));
     }
-    template<typename ...Us, DESALT_DATATYPES_REQUIRE(utils::all(std::is_constructible<Ts, Us>::value...))>
+    template<typename ...Us>
+        requires (std::constructible_from<Ts, Us> && ...)
     sum(sum<Us...> const & other) : which_(other.which()) {
         this->construct(other);
     }
-    template<typename ...Us, DESALT_DATATYPES_REQUIRE(utils::all(std::is_constructible<Ts, Us>::value...))>
+    template<typename ...Us>
+        requires (std::constructible_from<Ts, Us> && ...)
     sum(sum<Us...> && other) : which_(other.which()) {
         this->construct(std::move(other));
     }
@@ -112,21 +115,23 @@ public:
         destroy();
     }
 
-    sum & operator=(sum const & other) & {
+    sum & operator=(sum const & other) {
         this->assign(other);
         return *this;
     }
-    sum & operator=(sum && other) & {
+    sum & operator=(sum && other) {
         this->assign(std::move(other));
         return *this;
     }
     template<typename ...Us>
-    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), sum &>::type operator=(sum<Us...> const & other) & {
+        requires (std::assignable_from<Ts, Us> && ...)
+    sum & operator=(sum<Us...> const & other) {
         this->assign(other);
         return *this;
     }
     template<typename ...Us>
-    typename std::enable_if<utils::all(std::is_assignable<Ts, Us>::value...), sum &>::type operator=(sum<Us...> && other) & {
+        requires (std::assignable_from<Ts, Us> && ...)
+    sum & operator=(sum<Us...> && other) {
         this->assign(std::move(other));
         return *this;
     }
@@ -183,23 +188,27 @@ private:
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
+    template<std::size_t I>
+        requires enable_fallback
     stored<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
+    template<std::size_t I>
+        requires (!enable_fallback)
     stored<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
+    template<std::size_t I>
+        requires enable_fallback
     stored<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
-    template<std::size_t I, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
+    template<std::size_t I>
+        requires (!enable_fallback)
     stored<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!backedup()) return get_typed(t);
@@ -213,30 +222,32 @@ private:
     T const & get_typed(Tag) const {
         return *reinterpret_cast<T const *>(&storage_);
     }
-    template<typename Tag, typename T = stored<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
+    template<typename Tag, typename T = stored<Tag::value>>
+        requires (!enable_fallback)
     T & get_backup(Tag) {
         return **reinterpret_cast<T**>(&storage_);
     }
-    template<typename Tag, typename T = stored<Tag::value>, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
+    template<typename Tag, typename T = stored<Tag::value>>
+        requires (!enable_fallback)
     T const & get_backup(Tag) const {
         return **reinterpret_cast<T * const *>(&storage_);
     }
 
     bool nothrow_copy_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_copy_constructible<stored<t.value>>::value;
+                return std::is_nothrow_copy_constructible_v<stored<t.value>>;
             });
     }
     bool nothrow_move_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_move_constructible<stored<t.value>>::value;
+                return std::is_nothrow_move_constructible_v<stored<t.value>>;
             });
     }
     template<typename Union>
     bool nothrow_constructible(Union && other) const {
-        using value_type = typename std::decay<Union>::type;
+        using value_type = std::decay_t<Union>;
         return other.dispatch([] (auto t) {
-                return std::is_nothrow_constructible<stored<t.value>, typename value_type::template stored<t.value>&&>::value;
+                return std::is_nothrow_constructible_v<stored<t.value>, typename value_type::template stored<t.value>&&>;
             });
     }
     template<typename Union>
@@ -254,11 +265,13 @@ private:
                 this->destroy(t);
             });
     }
-    template<typename Tag, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(cond)>
+    template<typename Tag>
+        requires enable_fallback
     void destroy(Tag t) {
         here::destroy(get_typed(t));
     }
-    template<typename Tag, bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond), typename = void>
+    template<typename Tag>
+        requires (!enable_fallback)
     void destroy(Tag t) {
         if (backedup()) delete &get_backup(t);
         else here::destroy(get_typed(t));
@@ -272,24 +285,23 @@ private:
             if (this->nothrow_constructible(std::forward<Union>(other))) {
                 this->construct_using_nothrow_constructor(std::forward<Union>(other));
             } else {
-                auto fallback = utils::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(std::is_lvalue_reference<Union&&>::value)> * = {}) {
+                bool fallback;
+                if constexpr (std::is_lvalue_reference_v<Union&&>) {
                     bool nothrow_move_constructible = other.nothrow_move_constructible();
                     if (nothrow_move_constructible) {
                         this->construct_using_right_hand_move_constructor(other);
                     }
-                    return !nothrow_move_constructible;
-                }, [] (auto) {
-                    return std::true_type{};
-                });
+                    fallback = !nothrow_move_constructible;
+                } else {
+                    fallback = true;
+                }
                 if (fallback) {
                     if (this->nothrow_move_constructible()) {
                         this->construct_using_auto_storage_save(std::forward<Union>(other));
+                    } else if constexpr (enable_fallback) {
+                        this->construct_using_fallback_type(std::forward<Union>(other));
                     } else {
-                        utils::static_if([&] (auto dep, std::enable_if_t<decltype(dep)()(enable_fallback)> * = {}) {
-                            this->construct_using_fallback_type(std::forward<Union>(other));
-                        }, [&] (auto) {
-                            this->construct_using_dynamic_storage_save(std::forward<Union>(other));
-                        });
+                        this->construct_using_dynamic_storage_save(std::forward<Union>(other));
                     }
                 }
             }
@@ -299,8 +311,8 @@ private:
     template<typename Union>
     void copy_or_move_assign(Union && other) {
         this->dispatch([&] (auto t) {
-                this->get_unchecked(t) = std::forward<Union>(other).get_unchecked(t);
-            });
+            this->get_unchecked(t) = std::forward<Union>(other).get_unchecked(t);
+        });
     }
     template<typename Union>
     void construct_using_nothrow_constructor(Union && other) {
@@ -310,24 +322,24 @@ private:
     template<typename Union>
     void construct_using_right_hand_move_constructor(Union const & other) {
         other.dispatch([&] (auto t) {
-                using other_stored = typename std::decay_t<Union>::template stored<t.value>;
-                other_stored tmp(other.get_unchecked(t));
-                this->destroy();
-                this->construct_directly(t, std::move(tmp));
-            });
+            using other_stored = typename std::decay_t<Union>::template stored<t.value>;
+            other_stored tmp(other.get_unchecked(t));
+            this->destroy();
+            this->construct_directly(t, std::move(tmp));
+        });
     }
     template<typename Union>
     void construct_using_auto_storage_save(Union && other) {
         this->dispatch([&] (auto t) {
-                stored<t.value> tmp(std::move(this->get_unchecked(t)));
-                this->destroy(t);
-                try {
-                    this->construct(std::forward<Union>(other));
-                } catch (...) {
-                    this->construct_directly(t, std::move(tmp));
-                    throw;
-                }
-            });
+            stored<t.value> tmp(std::move(this->get_unchecked(t)));
+            this->destroy(t);
+            try {
+                this->construct(std::forward<Union>(other));
+            } catch (...) {
+                this->construct_directly(t, std::move(tmp));
+                throw;
+            }
+        });
     }
     template<typename Union, typename FallbackTag = fallback_tag>
     void construct_using_fallback_type(Union && other) {
@@ -368,12 +380,14 @@ private:
     void set_which(which_type which) {
         which_ = which;
     }
-    template<bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
-    bool backedup() const {
+    bool backedup() const
+        requires (!enable_fallback) 
+    {
         return (which_ & backup_mask) != 0;
     }
-    template<bool cond = enable_fallback, DESALT_DATATYPES_REQUIRE(!cond)>
-    void mark_as_backup() {
+    void mark_as_backup()
+        requires (!enable_fallback) 
+    {
         which_ |= backup_mask;
     }
 
@@ -385,11 +399,11 @@ private:
 
 template<typename ...Ts, typename ...Us>
 bool operator==(sum<Ts...> const & a, sum<Us...> const & b) {
-    static_assert(utils::all(utils::equality_comparable<rec::unwrap<Ts>, rec::unwrap<Us>>::value...), "each element type must be equality comparable.");
+    static_assert((utils::equality_comparable<rec::unwrap<Ts>, rec::unwrap<Us>> && ...), "each element type must be equality comparable.");
     if (a.which() != b.which()) return false;
     return a.dispatch([&] (auto t) -> bool {
-            return a.get_unchecked(t) == b.get_unchecked(t);
-        });
+        return a.get_unchecked(t) == b.get_unchecked(t);
+    });
 }
 template<typename ...Ts, typename ...Us>
 bool operator!=(sum<Ts...> const & a, sum<Us...> const & b) {
@@ -397,11 +411,11 @@ bool operator!=(sum<Ts...> const & a, sum<Us...> const & b) {
 }
 template<typename ...Ts, typename ...Us>
 bool operator<(sum<Ts...> const & a, sum<Us...> const & b) {
-    static_assert(utils::all(utils::less_than_comparable<rec::unwrap<Ts>, rec::unwrap<Us>>::value...), "each element type must be less than comparable.");
+    static_assert((utils::less_than_comparable<rec::unwrap<Ts>, rec::unwrap<Us>> && ...), "each element type must be less than comparable.");
     if (a.which() != b.which()) return a.which() < b.which();
     return a.dispatch([&] (auto t) -> bool {
-            return a.get_unchecked(t) < b.get_unchecked(t);
-        });
+        return a.get_unchecked(t) < b.get_unchecked(t);
+    });
 }
 template<typename ...Ts, typename ...Us>
 bool operator>(sum<Ts...> const & a, sum<Us...> const & b) {
@@ -425,18 +439,22 @@ struct visitor_table<F, std::index_sequence<Is...>> {
     static result_type visit(F & f) {
         return convert<0, I, Is...>(f);
     }
-    template<std::size_t K, std::size_t I, std::size_t J, std::size_t ...Js, DESALT_DATATYPES_REQUIRE(K != I)>
-    static deduce_return_type<decltype(utils::declval<F &>()(tag<J>{})), decltype(utils::declval<F &>()(tag<Js>{}))...> convert(F & f) {
+    template<std::size_t K, std::size_t I, std::size_t J, std::size_t ...Js>
+        requires (K != I)
+    static auto convert(F & f)
+        -> deduce_return_type<decltype(f(tag<J>{})), decltype(f(tag<Js>{}))...>
+    {
         return convert<K+1, I, Js...>(f);
     }
-    template<std::size_t K, std::size_t I, std::size_t ...Js, DESALT_DATATYPES_REQUIRE(K == I), typename = void>
-    static deduce_return_type<decltype(utils::declval<F &>()(tag<Js>{}))...> convert(F & f) {
+    template<std::size_t K, std::size_t I, std::size_t ...Js>
+        requires (K == I)
+    static auto convert(F & f)
+        -> deduce_return_type<decltype(f(tag<Js>{}))...>
+    {
         return f(tag<I>{});
     }
-    static constexpr visitor_type table[sizeof...(Is)]{ &visit<Is>... };
+    inline static constexpr visitor_type table[sizeof...(Is)]{ &visit<Is>... };
 };
-template<typename F, std::size_t ...Is>
-constexpr typename visitor_table<F, std::index_sequence<Is...>>::visitor_type visitor_table<F, std::index_sequence<Is...>>::table[sizeof...(Is)];
 
 // destroy
 template<typename T>
@@ -449,7 +467,7 @@ template<std::size_t I>
 struct find_fallback_type<I> : tag<I> {};
 template<std::size_t I, typename T, typename ...Ts>
 struct find_fallback_type<I, T, Ts...>
-    : std::conditional<std::is_nothrow_default_constructible<T>::value,
+    : std::conditional<std::is_nothrow_default_constructible_v<T>,
                        tag<I>,
                        find_fallback_type<I+1, Ts...>>::type
 {};
@@ -473,16 +491,16 @@ struct bad_tag : std::invalid_argument {
 
 // deduce_return_type_impl
 template<typename T>
-struct deduce_return_type_impl<T> {
-    using type = T;
-};
+struct deduce_return_type_impl<T>
+    : utils::id<T>
+{};
 template<>
-struct deduce_return_type_impl<void> {
-    using type = void;
-};
+struct deduce_return_type_impl<void>
+    : utils::id<void>
+{};
 template<typename ...Ts>
 struct deduce_return_type_impl<void, Ts...> {
-    static_assert(std::is_same<deduce_return_type<Ts...>, void>{}, "failed to deduce return type in sum::when or sum::dispatch.");
+    static_assert(std::is_same_v<deduce_return_type<Ts...>, void>, "failed to deduce return type in sum::when or sum::dispatch.");
     using type = deduce_return_type<Ts...>;
 };
 template<typename T, typename ...Ts>
@@ -491,15 +509,17 @@ struct deduce_return_type_impl<T, Ts...> {
 };
 
 // extend
-template<typename ...Ts, typename Union, typename>
+template<typename ...Ts, typename Union>
+    requires is_sum<std::decay_t<Union>>
 decltype(auto) extend(Union && u) {
     return std::forward<Union>(u).when([&] (auto t, auto && x) {
-            return sum<extended_element<std::decay_t<Union>, Ts>...>(extended_tag<t.value, Ts...>{}, std::forward<decltype(x)>(x));
-        });
+        return sum<extended_element<std::decay_t<Union>, Ts>...>(extended_tag<t.value, Ts...>{}, std::forward<decltype(x)>(x));
+    });
 }
 
 // extend_left
-template<typename ...Ts, typename Union, typename>
+template<typename ...Ts, typename Union>
+    requires is_sum<std::decay_t<Union>>
 decltype(auto) extend_left(Union && u) {
     return utils::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
         return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
@@ -507,7 +527,8 @@ decltype(auto) extend_left(Union && u) {
 }
 
 // extend_right
-template<typename ...Ts, typename Union, typename>
+template<typename ...Ts, typename Union>
+    requires is_sum<std::decay_t<Union>>
 decltype(auto) extend_right(Union && u) {
     return utils::with_index_sequence<std::decay_t<decltype(u)>::elements_size>([&] (auto ...is) -> decltype(auto) {
         return here::extend<Ts..., tag<is.value>...>(std::forward<Union>(u));
@@ -515,8 +536,8 @@ decltype(auto) extend_right(Union && u) {
 }
 
 // is_sum
-template<typename> struct is_sum : std::false_type {};
-template<typename ...Ts> struct is_sum<sum<Ts...>> : std::true_type {};
+template<typename> struct is_sum_impl : std::false_type {};
+template<typename ...Ts> struct is_sum_impl<sum<Ts...>> : std::true_type {};
 
 // extended_element_impl
 template<typename ...Ts, typename U>
@@ -545,15 +566,8 @@ struct extended_tag_impl<I, Res, T, Ts...>
 // size_type_impl
 template<std::size_t N>
 constexpr auto size_type_impl() {
-    return utils::static_if([] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least8_t>::max())> * = {}) {
-        return (std::uint_least8_t)0;
-    }, [] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least16_t>::max())> * = {}) {
-        return (std::uint_least16_t)0;
-    }, [] (auto, std::enable_if_t<(N <= std::numeric_limits<std::uint_least32_t>::max())> * = {}) {
-        return (std::uint_least32_t)0;
-    }, [] (auto) {
-        return (std::uint_least64_t)0;
-    });
+    enum e { max = N };
+    return std::underlying_type_t<e>{};
 }
 
 } // namespace sum {
@@ -568,7 +582,7 @@ struct substitute_recursion_placeholder<detail::sum::sum<Ts...>, Subst>
 
 template<typename ...Ts, template<typename> class Pred>
 struct need_rec_guard<detail::sum::sum<Ts...>, Pred>
-    : std::integral_constant<bool, !detail::utils::all(!start_new_rec<Pred, Ts>::value...)>
+    : std::integral_constant<bool, !(!start_new_rec<Pred, Ts>::value && ...)>
 {};
 
 } // namespace traits {
@@ -578,7 +592,7 @@ using detail::sum::extend;
 using detail::sum::extend_left;
 using detail::sum::extend_right;
 
-}} // namespace desalt { namespace datatypes {
+} // namespace desalt::datatypes {
 
 #if defined __GNUC__ || __clang__
     #pragma GCC diagnostic pop

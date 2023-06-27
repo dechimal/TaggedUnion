@@ -5,10 +5,8 @@
 #include <utility>
 #include <desalt/datatypes/recursion.hpp>
 
-namespace desalt { namespace datatypes {
-namespace detail {
-namespace here = detail;
-namespace product {
+namespace desalt::datatypes {
+namespace detail::product {
 namespace here = product;
 
 template<typename ...Ts>
@@ -22,7 +20,7 @@ public:
         : base_type(std::forward<Us>(xs)...)
     {}
 
-    product & operator=(product & other) {
+    product & operator=(product const & other) {
         base().operator=(other);
         return *this;
     }
@@ -42,11 +40,10 @@ private:
     base_type const && base() const && { return *this; }
 };
 
-} // namespace detail {
-} // namespace product {
+} // namespace detail::product {
 
 using detail::product::product;
 
-}} // namespace desalt { namespace datatypes {
+} // namespace desalt::datatypes {
 
 #endif

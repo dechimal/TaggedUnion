@@ -4,7 +4,7 @@ all: test
 
 variants = debug release
 compilers = g++ clang++
-test-srcs = test.cpp test_product.cpp
+test-srcs = test_sum.cpp test_product.cpp
 
 clean-files :=
 
@@ -34,12 +34,10 @@ endef
 
 define def-test-each-src
 test-$(variant)-$(compiler): test-$(variant)-$(compiler)-$(test-src)
-test-$(variant)-$(compiler)-$(test-src): prog-test-$(variant)-$(compiler)-$(test-src)
-	./$<
+test-$(variant)-$(compiler)-$(test-src): $(test-src)
+	$(CXX) -std=c++20 $(CXXFLAGS) $(CPPFLAGS) $< -o prog-$@ -Werror -Wall -Wextra -pedantic-errors -g -I$$PWD/include
+	./prog-$@
 .PHONY: test-$(variant)-$(compiler)-$(test-src)
-
-prog-test-$(variant)-$(compiler)-$(test-src): $(test-src)
-	$(CXX) -std=c++14 $(CXXFLAGS) $(CPPFLAGS) $< -o $@ -Werror -Wall -Wextra -pedantic-errors -g -I$$PWD/include
 
 clean-files += prog-test-$(variant)-$(compiler)-$(test-src)
 endef
