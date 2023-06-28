@@ -582,7 +582,7 @@ struct substitute_recursion_placeholder<detail::sum::sum<Ts...>, Subst>
 
 template<typename ...Ts, template<typename> class Pred>
 struct need_rec_guard<detail::sum::sum<Ts...>, Pred>
-    : std::integral_constant<bool, !(!start_new_rec<Pred, Ts>::value && ...)>
+    : std::integral_constant<bool, (start_new_rec<Pred, Ts>::value || ...)>
 {};
 
 } // namespace traits {

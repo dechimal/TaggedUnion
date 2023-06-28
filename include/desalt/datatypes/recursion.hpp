@@ -155,7 +155,7 @@ struct need_rec_guard<std::pair<T, U>, Pred>
 
 template<typename ...Ts, template<typename> class Pred>
 struct need_rec_guard<std::tuple<Ts...>, Pred>
-    : std::integral_constant<bool, !(!Pred<Ts>::value && ...)>
+    : std::integral_constant<bool, (Pred<Ts>::value || ...)>
 {};
 
 template<typename T, std::size_t N, template<typename> class Pred>
