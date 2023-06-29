@@ -7,8 +7,8 @@ namespace desalt::datatypes {
 
 namespace traits {
 
-template<typename, template<typename> class, typename = void> struct need_rec_guard;
-template<typename, template<typename> class, typename = void> struct substitute_recursion_placeholder;
+template<typename, template<typename> class> struct need_rec_guard;
+template<typename, template<typename> class> struct substitute_recursion_placeholder;
 
 }
 
@@ -24,14 +24,13 @@ template<std::size_t> struct rec;
 template<std::size_t I> bool operator==(rec<I>, rec<I>);
 template<std::size_t I> bool operator<(rec<I>, rec<I>);
 template<typename> struct unwrap_impl;
-template<typename> struct start_new_rec_impl;
+template<typename> struct start_new_rec;
 
 template<typename Union, typename T> using unfold = typename unfold_impl_1<Union, T>::type;
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
 template<typename Union, typename T> using element = unwrap<unfold<Union, T>>;
 template<typename Union, std::size_t I, typename ...Ts> using nth_unfold = unfold<Union, utils::at<I, Ts...>>;
 template<typename Union, std::size_t I, typename ...Ts> using nth_element = unwrap<nth_unfold<Union, I, Ts...>>;
-template<template<typename> class Subst, typename T> using start_new_rec = start_new_rec_impl<Subst<T>>;
 
 // unfold_impl_1
 template<typename Self, typename T>
@@ -48,10 +47,11 @@ struct unfold_impl_1<Self, rec_guard<T>>
 // unfold_impl_2
 template<typename Union, std::size_t I, typename T>
 struct unfold_impl_2 {
-    template<typename U> using apply = unfold_impl_2<Union, I, U>;
+    template<typename U> using apply = typename unfold_impl_2<Union, I, U>::type;
     using type = typename traits::substitute_recursion_placeholder<T, apply>::type;
 };
 template<typename Union, std::size_t I> struct unfold_impl_2<Union, I, rec<I>> : id<Union> {};
+template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, start_new_rec<T>> : unfold_impl_2<Union, I+1, T> {};
 template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T*> : id<typename unfold_impl_2<Union, I, T>::type*> {};
 template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&> : id<typename unfold_impl_2<Union, I, T>::type&> {};
 template<typename Union, std::size_t I, typename T> struct unfold_impl_2<Union, I, T&&> : id<typename unfold_impl_2<Union, I, T>::type&&> {};
@@ -73,13 +73,6 @@ template<typename Union, std::size_t I, typename R, typename ...Args> struct unf
 template<typename Union, std::size_t I, typename R, typename ...Args> struct unfold_impl_2<Union, I, R(Args...) const volatile &&> : id<typename unfold_impl_2<Union, I, R>::type(typename unfold_impl_2<Union, I, Args>::type...) const volatile &&> {};
 template<typename Union, std::size_t I, typename T, typename C> struct unfold_impl_2<Union, I, T (C::*)> : id<typename unfold_impl_2<Union, I, T>::type(unfold_impl_2<Union, I, C>::type::*)> {};
 
-// start_new_rec_impl
-template<typename Union, std::size_t I, typename T>
-struct start_new_rec_impl<unfold_impl_2<Union, I, T>> : unfold_impl_2<Union, I + 1, T> {};
-
-template<std::size_t I, typename T>
-struct start_new_rec_impl<need_rec_guard<I, T>> : need_rec_guard<I + 1, T> {};
-
 // need_rec_guard
 template<std::size_t I, typename T> struct need_rec_guard {
     template<typename U> using apply = need_rec_guard<I, U>;
@@ -89,6 +82,7 @@ template<std::size_t I, typename T> struct need_rec_guard {
     constexpr operator bool() const noexcept { return value; }
     constexpr bool operator()() const noexcept { return value; }
 };
+template<std::size_t I, typename T> struct need_rec_guard<I, start_new_rec<T>> : need_rec_guard<I + 1, T> {};
 template<std::size_t I, typename T> struct need_rec_guard<I, T*> : std::false_type {};
 template<std::size_t I, typename T, typename C> struct need_rec_guard<I, T (C::*)> : std::false_type {};
 template<std::size_t I, typename T> struct need_rec_guard<I, T const> : need_rec_guard<I, T> {};
@@ -145,7 +139,7 @@ private:
 namespace traits {
 
 // need_rec_guard
-template<typename, template<typename> class, typename>
+template<typename, template<typename> class>
 struct need_rec_guard : std::false_type {};
 
 template<typename T, typename U, template<typename> class Pred>
@@ -162,22 +156,22 @@ template<typename T, std::size_t N, template<typename> class Pred>
 struct need_rec_guard<std::array<T, N>, Pred> : Pred<T> {};
 
 // substitute_recursion_placeholder
-template<typename T, template<typename> class, typename>
+template<typename T, template<typename> class>
 struct substitute_recursion_placeholder : detail::utils::id<T> {};
 
 template<typename T, std::size_t N, template<typename> class Subst>
 struct substitute_recursion_placeholder<std::array<T, N>, Subst>
-    : detail::utils::id<std::array<typename Subst<T>::type, N>>
+    : detail::utils::id<std::array<Subst<T>, N>>
 {};
 
 template<template<typename ...> class Tmpl, typename ...Args, template<typename> class Subst>
 struct substitute_recursion_placeholder<Tmpl<Args...>, Subst>
-    : detail::utils::id<Tmpl<typename Subst<Args>::type...>>
+    : detail::utils::id<Tmpl<Subst<Args>...>>
 {};
 
 template<template<typename ...> class Tmpl, typename ...Args, template<typename> class Subst>
 struct substitute_recursion_placeholder<Tmpl<type_fun, Args...>, Subst>
-    : detail::utils::id<typename Tmpl<type_fun, typename Subst<Args>::type...>::type>
+    : detail::utils::id<typename Tmpl<type_fun, Subst<Args>...>::type>
 {};
 
 } // namespace traits {
