@@ -52,13 +52,16 @@ struct non_type_parameter_template {
     T x[N];
     U y[N];
 };
-
-template<typename Tag, typename T, typename N, typename U>
-struct make_non_type_parameter_template;
-template<typename T, typename N, typename U>
-struct make_non_type_parameter_template<type_fun, T, N, U> {
-    using type = non_type_parameter_template<T, N::value, U>;
+template<typename T, std::size_t N, typename U>
+struct make_non_type_parameter_template {
+    template<template<typename> typename F>
+    using apply = non_type_parameter_template<
+        F<T>, N, F<U>
+    >;
 };
+
+template<typename>
+[[deprecated]] void print() {}
 
 int main() {
     {
@@ -261,8 +264,9 @@ int main() {
     }
     {
         // recursion with non-type parameter (ad-hoc way)
-        using type = make_non_type_parameter_template<type_fun, _, std::integral_constant<std::size_t, 2>, int>;
+        using type = type_fun<make_non_type_parameter_template<_, 2, int>>;
         using u = sum<rec_guard<type>, int>;
+        // print<decltype(std::declval<u>().get(_0))>;
         u x(_1, 42);
         using expected = non_type_parameter_template<u, 2, int>;
         static_assert(std::is_same<decltype(std::declval<u>().get(_0)), expected &&>::value, "failed at recursion with non-type parameter (ad-hoc way)");

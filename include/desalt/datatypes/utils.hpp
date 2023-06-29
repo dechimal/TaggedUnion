@@ -39,7 +39,9 @@ template<typename ...Fs> tie_t<Fs...> tie(Fs ...fs);
 
 template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::type;
 
-struct type_fun;
+template<typename F, typename T> using apply = typename F::template apply<T>;
+
+template<typename> struct type_fun;
 
 // tag
 template<std::size_t I>
@@ -72,7 +74,7 @@ template<typename T, typename ...Ts> struct at_impl<0, T, Ts...> : id<T> {};
 template<std::size_t I, typename T, typename ...Ts> struct at_impl<I, T, Ts...> : at_impl<I-1, Ts...> {};
 
 // type_fun
-struct type_fun {};
+template<typename> struct type_fun {};
 
 // tie_t
 // `tie_t` is a function object type to tie some function objects.
