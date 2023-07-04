@@ -19,89 +19,90 @@ using utils::id;
 using utils::apply;
 
 template<typename> struct rec_guard;
-template<typename, typename> struct unfold_impl_1;
-template<typename, typename> struct unfold_impl_2;
-template<std::size_t, typename> struct need_rec_guard;
-template<std::size_t> struct need_rec_guard_impl;
+template<typename, std::size_t> struct unfold_impl;
+template<typename, typename> struct unfold_guarded_impl;
+template<std::size_t> struct need_rec_guard;
 template<std::size_t> struct rec;
 template<std::size_t I> bool operator==(rec<I>, rec<I>);
 template<std::size_t I> bool operator<(rec<I>, rec<I>);
 template<typename> struct unwrap_impl;
 template<typename> struct start_new_rec;
 
-template<typename Self, typename T> using unfold = typename unfold_impl_1<Self, T>::type;
+template<typename Self, typename T> using unfold = typename unfold_impl<Self, 0>::template apply<T>;
+template<typename Self, typename T> using storage = typename unfold_guarded_impl<Self, T>::type;
 template<typename T> using unwrap = typename unwrap_impl<T>::type;
-template<typename Self, typename T> using element = unwrap<unfold<Self, T>>;
-template<typename Self, std::size_t I, typename ...Ts> using nth_unfold = unfold<Self, utils::at<I, Ts...>>;
-template<typename Self, std::size_t I, typename ...Ts> using nth_element = unwrap<nth_unfold<Self, I, Ts...>>;
+template<typename Self, typename T> using element = unfold<Self, unwrap<T>>;
+template<typename Self, std::size_t I, typename ...Ts> using nth_element = element<Self, unwrap<utils::at<I, Ts...>>>;
+template<typename Self, std::size_t I, typename ...Ts> using nth_storage = storage<Self, utils::at<I, Ts...>>;
 
-// subst
-template<typename Self, std::size_t I>
-struct subst {
-    template<typename T>
-    using apply = typename unfold_impl_2<subst, T>::type;
-};
+#define DEF_VAR_VARIANTS(f) f(*) f(&) f(&&) f(const) f(volatile) f(const volatile)
+#define DEF_VAR_SPECIALIZATION(qual) \
+    template<typename T> \
+    struct apply_impl<T qual> : id<apply<T> qual> {};
 
-// unfold_impl_1
-template<typename Self, typename T>
-struct unfold_impl_1 {
-    using result = apply<subst<Self, 0>, T>;
-    static constexpr bool guard = need_rec_guard<0, T>::value;
-    using type = typename std::conditional<guard, rec_guard<result>, result>::type;
-};
-template<typename Self, typename T>
-struct unfold_impl_1<Self, rec_guard<T>>
-    : id<rec_guard<apply<subst<Self, 0>, T>>>
-{};
-
-// unfold_impl_2
-template<typename Subst, typename T>
-struct unfold_impl_2
-    : traits::substitute_recursion_placeholder<T, Subst::template apply>
-{};
-template<typename Self, std::size_t I> struct unfold_impl_2<subst<Self, I>, rec<I>> : id<Self> {};
-template<typename Self, std::size_t I, typename T> struct unfold_impl_2<subst<Self, I>, start_new_rec<T>> : unfold_impl_2<subst<Self, I+1>, T> {};
-
-template<typename Subst, typename T> struct unfold_impl_2<Subst, T *             > : id<apply<Subst, T> *             > {};
-template<typename Subst, typename T> struct unfold_impl_2<Subst, T &             > : id<apply<Subst, T> &             > {};
-template<typename Subst, typename T> struct unfold_impl_2<Subst, T &&            > : id<apply<Subst, T> &&            > {};
-template<typename Subst, typename T> struct unfold_impl_2<Subst, T const         > : id<apply<Subst, T> const         > {};
-template<typename Subst, typename T> struct unfold_impl_2<Subst, T       volatile> : id<apply<Subst, T>       volatile> {};
-template<typename Subst, typename T> struct unfold_impl_2<Subst, T const volatile> : id<apply<Subst, T> const volatile> {};
-
-template<typename Subst, typename T               > struct unfold_impl_2<Subst, T[ ]> : id<apply<Subst, T>[ ]> {};
-template<typename Subst, typename T, std::size_t N> struct unfold_impl_2<Subst, T[N]> : id<apply<Subst, T>[N]> {};
-
-#define CV(f, ref, e) f(, ref, e) f(const, ref, e) f(volatile, ref, e) f(const volatile, ref, e)
-#define REF(f, e) CV(f, , e) CV(f, &, e) CV(f, &&, e)
-#define NOEXCEPT(f) REF(f,) REF(f, noexcept)
+#define DEF_FUNC_VARIANTS_CV(f, ref, e) f(, ref, e) f(const, ref, e) f(volatile, ref, e) f(const volatile, ref, e)
+#define DEF_FUNC_VARIANTS_REF(f, e) DEF_FUNC_VARIANTS_CV(f, , e) DEF_FUNC_VARIANTS_CV(f, &, e) DEF_FUNC_VARIANTS_CV(f, &&, e)
+#define DEF_FUNC_VARIANTS(f) DEF_FUNC_VARIANTS_REF(f,) DEF_FUNC_VARIANTS_REF(f, noexcept)
 
 #define DEF_FUNC_SPECIALIZATION(cv, ref, e) \
-    template<typename Subst, typename R, typename ...Args> \
-    struct unfold_impl_2<Subst, R(Args...) cv ref e> : id<apply<Subst, R>(apply<Subst, Args>...) cv ref e> {};
+    template<typename R, typename ...Args> \
+    struct apply_impl<R(Args...) cv ref e> : id<apply<R>(apply<Args>...) cv ref e> {};
 
-NOEXCEPT(DEF_FUNC_SPECIALIZATION)
+// unfold_impl
+template<typename Self, std::size_t I>
+struct unfold_impl {
+    template<typename T> struct apply_impl;
+    template<typename T> using apply = typename apply_impl<T>::type;
+    template<typename T> struct apply_impl
+        : traits::substitute_recursion_placeholder<T, apply>
+    {};
 
-template<typename Subst, typename T, typename C>
-struct unfold_impl_2<Subst, T (C::*)> : id<apply<Subst, T>(apply<Subst, C>::*)> {};
+    template<typename T> struct apply_impl<start_new_rec<T>>
+        : unfold_impl<Self, I + 1>::template apply_impl<T>
+    {};
+    template<std::size_t J> requires (J == I) struct apply_impl<rec<J>    > : id<Self> {};
+    template<typename T               > struct apply_impl<T [ ]           > : id<apply<T>[ ]> {};
+    template<typename T, std::size_t N> struct apply_impl<T [N]           > : id<apply<T>[N]> {};
+    template<typename T, typename C   > struct apply_impl<T (C::*)        > : id<apply<T>(apply<C>::*)> {};
+
+    DEF_VAR_VARIANTS(DEF_VAR_SPECIALIZATION)
+    DEF_FUNC_VARIANTS(DEF_FUNC_SPECIALIZATION)
+};
 
 // need_rec_guard
-template<std::size_t I, typename T> struct need_rec_guard
-    : traits::need_rec_guard<T, need_rec_guard_impl<I>::template apply>
-{};
-template<std::size_t I, typename T> struct need_rec_guard<I, start_new_rec<T>> : need_rec_guard<I + 1, T> {};
-template<std::size_t I, typename TyCons> struct need_rec_guard<I, type_fun<TyCons>> : need_rec_guard<I + 1, typename TyCons::template apply<id>> {};
-template<std::size_t I, typename T> struct need_rec_guard<I, T*> : std::false_type {};
-template<std::size_t I, typename T, typename C> struct need_rec_guard<I, T (C::*)> : std::false_type {};
-template<std::size_t I, typename T> struct need_rec_guard<I, T const> : need_rec_guard<I, T> {};
-template<std::size_t I, typename T> struct need_rec_guard<I, T volatile> : need_rec_guard<I, T> {};
-template<std::size_t I, typename T> struct need_rec_guard<I, T const volatile> : need_rec_guard<I, T> {};
-template<std::size_t I> struct need_rec_guard<I, rec<I>> : std::true_type {};
+template<std::size_t I> struct need_rec_guard {
+    template<typename T> struct apply_impl;
+    template<typename T> using apply = typename apply_impl<T>::type;
+    template<typename T> struct apply_impl : traits::need_rec_guard<T, apply> {};
 
-// need_rec_guard_impl
-template<std::size_t I> struct need_rec_guard_impl {
-    template<typename T> using apply = typename need_rec_guard<I, T>::type;
+    template<typename T> struct apply_impl<start_new_rec<T>>
+        : need_rec_guard<I + 1>::template apply_impl<T>
+    {};
+    template<typename TyCons> struct apply_impl<type_fun<TyCons>>
+        : apply_impl<typename TyCons::template apply<id>>
+    {};
+    template<std::size_t J> requires (J == I) struct apply_impl<rec<J>    > : std::true_type {};
+    template<typename T               > struct apply_impl<T *             > : std::false_type {};
+    template<typename T               > struct apply_impl<T const         > : apply_impl<T> {};
+    template<typename T               > struct apply_impl<T       volatile> : apply_impl<T> {};
+    template<typename T               > struct apply_impl<T const volatile> : apply_impl<T> {};
+    template<typename T, std::size_t N> struct apply_impl<T [N]           > : apply_impl<T> {};
+    template<typename T, typename C   > struct apply_impl<T (C::*)        > : std::false_type {};
 };
+
+// unfold_guarded_impl
+template<typename Self, typename T>
+struct unfold_guarded_impl
+    : std::conditional<
+        need_rec_guard<0>::template apply<T>::value,
+        rec_guard<unfold<Self, T>>,
+        unfold<Self, T>
+    >
+{};
+template<typename Self, typename T>
+struct unfold_guarded_impl<Self, rec_guard<T>>
+    : id<rec_guard<unfold<Self, T>>>
+{};
 
 // u<int, _>
 // u<int, rec<u<int, _>>>

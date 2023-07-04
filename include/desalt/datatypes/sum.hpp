@@ -65,8 +65,7 @@ template<std::size_t N> using size_type = decltype(here::size_type_impl<N>());
 // sum
 template<typename ...Ts>
 class sum {
-    template<typename T> using unfold = rec::unfold<sum, T>;
-    using fallback_tag = typename find_fallback_type<0, unfold<Ts>...>::type;
+    using fallback_tag = typename find_fallback_type<0, rec::storage<sum, Ts>...>::type;
 
 public:
     static constexpr bool enable_fallback = fallback_tag::value != sizeof...(Ts);
@@ -74,8 +73,8 @@ public:
     static constexpr which_type elements_size = sizeof...(Ts);
 
 private:
-    template<std::size_t I> using stored = rec::nth_unfold<sum, I, Ts...>;
     template<std::size_t I> using element = rec::nth_element<sum, I, Ts...>;
+    template<std::size_t I> using storage = rec::nth_storage<sum, I, Ts...>;
 
     static constexpr which_type backup_mask = (which_type)~((which_type)~0 >> 1);
     static_assert(((elements_size + enable_fallback) & backup_mask) == 0, "too many elements.");
@@ -179,55 +178,55 @@ public:
 
 private:
     template<std::size_t I, typename E = bad_tag>
-    stored<I> & get_impl(tag<I> t) {
+    storage<I> & get_impl(tag<I> t) {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
     template<std::size_t I, typename E = bad_tag>
-    stored<I> const & get_impl(tag<I> t) const {
+    storage<I> const & get_impl(tag<I> t) const {
         if (t.value == which()) return get_unchecked_impl(t);
         else throw E();
     }
     template<std::size_t I>
         requires enable_fallback
-    stored<I> & get_unchecked_impl(tag<I> t) {
+    storage<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
     template<std::size_t I>
         requires (!enable_fallback)
-    stored<I> & get_unchecked_impl(tag<I> t) {
+    storage<I> & get_unchecked_impl(tag<I> t) {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!this->backedup()) return get_typed(t);
         else return get_backup(t);
     }
     template<std::size_t I>
         requires enable_fallback
-    stored<I> const & get_unchecked_impl(tag<I> t) const {
+    storage<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         return get_typed(t);
     }
     template<std::size_t I>
         requires (!enable_fallback)
-    stored<I> const & get_unchecked_impl(tag<I> t) const {
+    storage<I> const & get_unchecked_impl(tag<I> t) const {
         static_assert(t.value < elements_size, "the index is too large.");
         if (!backedup()) return get_typed(t);
         else return get_backup(t);
     }
-    template<typename Tag, typename T = stored<Tag::value>>
+    template<typename Tag, typename T = storage<Tag::value>>
     T & get_typed(Tag) {
         return *reinterpret_cast<T*>(&storage_);
     }
-    template<typename Tag, typename T = stored<Tag::value>>
+    template<typename Tag, typename T = storage<Tag::value>>
     T const & get_typed(Tag) const {
         return *reinterpret_cast<T const *>(&storage_);
     }
-    template<typename Tag, typename T = stored<Tag::value>>
+    template<typename Tag, typename T = storage<Tag::value>>
         requires (!enable_fallback)
     T & get_backup(Tag) {
         return **reinterpret_cast<T**>(&storage_);
     }
-    template<typename Tag, typename T = stored<Tag::value>>
+    template<typename Tag, typename T = storage<Tag::value>>
         requires (!enable_fallback)
     T const & get_backup(Tag) const {
         return **reinterpret_cast<T * const *>(&storage_);
@@ -235,19 +234,19 @@ private:
 
     bool nothrow_copy_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_copy_constructible_v<stored<t.value>>;
+                return std::is_nothrow_copy_constructible_v<storage<t.value>>;
             });
     }
     bool nothrow_move_constructible() const {
         return this->dispatch([] (auto t) {
-                return std::is_nothrow_move_constructible_v<stored<t.value>>;
+                return std::is_nothrow_move_constructible_v<storage<t.value>>;
             });
     }
     template<typename Union>
     bool nothrow_constructible(Union && other) const {
         using value_type = std::decay_t<Union>;
         return other.dispatch([] (auto t) {
-                return std::is_nothrow_constructible_v<stored<t.value>, typename value_type::template stored<t.value>&&>;
+                return std::is_nothrow_constructible_v<storage<t.value>, typename value_type::template storage<t.value>&&>;
             });
     }
     template<typename Union>
@@ -258,7 +257,7 @@ private:
     }
     template<std::size_t I, typename ...Args>
     void construct_directly(tag<I> t, Args && ...args) {
-        new(&storage_) stored<t.value>(std::forward<Args>(args)...);
+        new(&storage_) storage<t.value>(std::forward<Args>(args)...);
     }
     void destroy() {
         this->dispatch([&] (auto t) {
@@ -322,8 +321,8 @@ private:
     template<typename Union>
     void construct_using_right_hand_move_constructor(Union const & other) {
         other.dispatch([&] (auto t) {
-            using other_stored = typename std::decay_t<Union>::template stored<t.value>;
-            other_stored tmp(other.get_unchecked(t));
+            using other_storage = typename std::decay_t<Union>::template storage<t.value>;
+            other_storage tmp(other.get_unchecked(t));
             this->destroy();
             this->construct_directly(t, std::move(tmp));
         });
@@ -331,7 +330,7 @@ private:
     template<typename Union>
     void construct_using_auto_storage_save(Union && other) {
         this->dispatch([&] (auto t) {
-            stored<t.value> tmp(std::move(this->get_unchecked(t)));
+            storage<t.value> tmp(std::move(this->get_unchecked(t)));
             this->destroy(t);
             try {
                 this->construct(std::forward<Union>(other));
@@ -357,7 +356,7 @@ private:
     template<typename Union>
     void construct_using_dynamic_storage_save(Union && other) {
         this->dispatch([&] (auto t) {
-            auto p = new stored<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
+            auto p = new storage<t.value>(std::move_if_noexcept(this->get_unchecked(t)));
             try {
                 this->destroy(t);
                 this->construct(std::forward<Union>(other));
@@ -393,8 +392,8 @@ private:
 
     which_type which_;
     std::conditional_t<enable_fallback,
-        std::aligned_union_t<0, unfold<Ts>...>,
-        std::aligned_union_t<0, unfold<Ts>..., void*>> storage_;
+        std::aligned_union_t<0, rec::storage<sum, Ts>...>,
+        std::aligned_union_t<0, rec::storage<sum, Ts>..., void*>> storage_;
 };
 
 template<typename ...Ts, typename ...Us>
