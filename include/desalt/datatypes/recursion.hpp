@@ -27,6 +27,7 @@ template<std::size_t I> bool operator==(rec<I>, rec<I>);
 template<std::size_t I> bool operator<(rec<I>, rec<I>);
 template<typename> struct unwrap_impl;
 template<typename> struct start_new_rec;
+template<typename T, template<typename> typename> struct default_subst;
 
 template<typename Self, typename T> using unfold = typename unfold_impl<Self, 0>::template apply<T>;
 template<typename Self, typename T> using storage = typename unfold_guarded_impl<Self, T>::type;
@@ -151,11 +152,11 @@ private:
 };
 
 template<typename T, template<typename> typename>
-struct default_substitute_recursion_placeholder
+struct default_subst
     : id<T>
 {};
 template<template<typename...> typename Tmpl, typename ...Args, template<typename> typename Subst>
-struct default_substitute_recursion_placeholder<Tmpl<Args...>, Subst>
+struct default_subst<Tmpl<Args...>, Subst>
     : id<Tmpl<Subst<Args>...>>
 {};
 
@@ -169,12 +170,12 @@ struct need_rec_guard : std::false_type {};
 
 template<typename T, typename U, template<typename> class Pred>
 struct need_rec_guard<std::pair<T, U>, Pred>
-    : std::integral_constant<bool, Pred<T>::value || Pred<U>::value>
+    : detail::utils::bconst<Pred<T>::value || Pred<U>::value>
 {};
 
 template<typename ...Ts, template<typename> class Pred>
 struct need_rec_guard<std::tuple<Ts...>, Pred>
-    : std::integral_constant<bool, (Pred<Ts>::value || ...)>
+    : detail::utils::bconst<(Pred<Ts>::value || ...)>
 {};
 
 template<typename T, std::size_t N, template<typename> class Pred>
@@ -183,7 +184,7 @@ struct need_rec_guard<std::array<T, N>, Pred> : Pred<T> {};
 // substitute_recursion_placeholder
 template<typename T, template<typename> class Subst>
 struct substitute_recursion_placeholder
-    : detail::rec::default_substitute_recursion_placeholder<T, Subst>
+    : detail::rec::default_subst<T, Subst>
 {};
 
 template<typename T, std::size_t N, template<typename> class Subst>

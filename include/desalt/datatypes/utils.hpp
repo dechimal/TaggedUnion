@@ -41,13 +41,14 @@ template<std::size_t I, typename ...Ts> using at = typename at_impl<I, Ts...>::t
 
 template<typename F, typename T> using apply = typename F::template apply<T>;
 
+template<std::size_t N> using zconst = std::integral_constant<std::size_t, N>;
+template<bool B>        using bconst = std::bool_constant<B>;
+
 template<typename> struct type_fun;
 
 // tag
 template<std::size_t I>
-struct tag
-    : std::integral_constant<std::size_t, I>
-{
+struct tag : zconst<I> {
     using type = tag;
 };
 
@@ -60,7 +61,7 @@ constexpr decltype(auto) with_index_sequence(F f) {
 // with_index_sequence_impl
 template<std::size_t ...Is, typename F>
 constexpr decltype(auto) with_index_sequence_impl(std::index_sequence<Is...>, F f) {
-    return f(std::integral_constant<std::size_t, Is>{}...);
+    return f(zconst<Is>{}...);
 }
 
 // id
